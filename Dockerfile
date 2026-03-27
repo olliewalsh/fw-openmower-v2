@@ -37,12 +37,7 @@ RUN mkdir build
 # deps like lwjson are fetched from GitHub once instead of once per platform
 # (avoids tripping codeload's transient 500s / rate limiting).
 ENV FETCHCONTENT_BASE_DIR=/project/build/_deps
-RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=YardForce -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BYardForce && cd YardForce && make -j$(nproc)
-RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=YardForce_V4 -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BYardForce_V4 && cd YardForce_V4 && make -j$(nproc)
-RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=Worx -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BWorx && cd Worx && make -j$(nproc)
-RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=Lyfco_E1600 -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BLyfco_E1600 && cd Lyfco_E1600 && make -j$(nproc)
 RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=Sabo -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BSabo && cd Sabo && make -j$(nproc)
-RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=xBot -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BxBot && cd xBot && make -j$(nproc)
 RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=Universal5S -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BUniversal5S && cd Universal5S && make -j$(nproc)
 RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=Universal7S -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BUniversal7S && cd Universal7S && make -j$(nproc)
 RUN cd build && cmake .. --preset=${BUILD_PRESET} -DROBOT_PLATFORM=Universal8S -DFETCHCONTENT_BASE_DIR=${FETCHCONTENT_BASE_DIR} -BUniversal8S && cd Universal8S && make -j$(nproc)
@@ -58,23 +53,9 @@ COPY --from=builder /project/build/ccache.txt /ccache.txt
 COPY --from=builder /project/build/ram-info.html /ram-info.html
 COPY --from=builder /project/build/flash-info.html /flash-info.html
 
-COPY --from=builder /project/build/YardForce/openmower.bin /openmower-yardforce.bin
-COPY --from=builder /project/build/YardForce/openmower.elf /openmower-yardforce.elf
-
-COPY --from=builder /project/build/YardForce_V4/openmower.bin /openmower-yardforce-v4.bin
-COPY --from=builder /project/build/YardForce_V4/openmower.elf /openmower-yardforce-v4.elf
-
-COPY --from=builder /project/build/Worx/openmower.bin /openmower-worx.bin
-COPY --from=builder /project/build/Worx/openmower.elf /openmower-worx.elf
-
-COPY --from=builder /project/build/Lyfco_E1600/openmower.bin /openmower-lyfco-e1600.bin
-COPY --from=builder /project/build/Lyfco_E1600/openmower.elf /openmower-lyfco-e1600.elf
-
 COPY --from=builder /project/build/Sabo/openmower.bin /openmower-sabo.bin
 COPY --from=builder /project/build/Sabo/openmower.elf /openmower-sabo.elf
 
-COPY --from=builder /project/build/xBot/openmower.bin /openmower-xbot.bin
-COPY --from=builder /project/build/xBot/openmower.elf /openmower-xbot.elf
 
 COPY --from=builder /project/build/Universal5S/openmower.bin /openmower-universal-5s.bin
 COPY --from=builder /project/build/Universal5S/openmower.elf /openmower-universal-5s.elf
