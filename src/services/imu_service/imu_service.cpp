@@ -145,9 +145,6 @@ uint16_t ImuService::GetEmergencyReasons() {
       (emergency_reasons & EmergencyReason::LATCH) == 0) {
     collision_active_ = false;
     collision_trigger_count_ = 0;
-  } else if (collision_active_ && (emergency_reasons & EmergencyReason::COLLISION) == 0) {
-    collision_active_ = false;
-    collision_trigger_count_ = 0;
   }
 
   return collision_active_ ? static_cast<uint16_t>(EmergencyReason::COLLISION | EmergencyReason::LATCH) : 0;
