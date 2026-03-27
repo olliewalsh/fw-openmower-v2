@@ -6,7 +6,8 @@
 	url = https://github.com/rovo89/minmea.git
 [submodule "services"]
 	path = services
-	url = https://github.com/xtech/definitions-open-mower.git
+	url = https://github.com/olliewalsh/definitions-open-mower.git
+	branch = feature/imu_collision
 [submodule "ext/littlefs"]
 	path = ext/littlefs
 	url = https://github.com/littlefs-project/littlefs.git

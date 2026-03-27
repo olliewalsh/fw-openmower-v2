@@ -23,6 +23,7 @@ uint32_t EmergencyService::CheckInputs(uint32_t now) {
   constexpr uint16_t potential_reasons =
       EmergencyReason::STOP | EmergencyReason::LIFT | EmergencyReason::LIFT_MULTIPLE | EmergencyReason::COLLISION;
   auto [reasons, block_time] = input_service.GetEmergencyReasons(now);
+  reasons |= imu_service.GetEmergencyReasons();
   UpdateEmergency(reasons, potential_reasons);
   return block_time;
 }

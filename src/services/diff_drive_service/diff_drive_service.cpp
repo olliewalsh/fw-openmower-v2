@@ -6,6 +6,7 @@
 
 #include <ulog.h>
 
+#include <cmath>
 #include <drivers/motor/motor_driver.hpp>
 #include <services.hpp>
 #include <xbot-service/portable/system.hpp>
@@ -30,6 +31,17 @@ void DiffDriveService::SetDrivers(MotorDriver* left_driver, MotorDriver* right_d
   right_esc_driver_ = right_driver;
 }
 
+void DiffDriveService::GetCollisionMetrics(float& avg_abs_current, float& actual_linear_velocity,
+                                           float& actual_angular_velocity, bool& esc_state_valid) {
+  chMtxLock(&state_mutex_);
+  esc_state_valid = left_esc_state_valid_ || right_esc_state_valid_ ||
+                    (xbot::service::system::getTimeMicros() - last_valid_esc_state_micros_ <= 250'000);
+  avg_abs_current = 0.5f * (std::fabs(left_esc_state_.current_input) + std::fabs(right_esc_state_.current_input));
+  actual_linear_velocity = actual_linear_velocity_;
+  actual_angular_velocity = actual_angular_velocity_;
+  chMtxUnlock(&state_mutex_);
+}
+
 bool DiffDriveService::OnStart() {
   // Check, if configuration is valid, if not retry
   if (WheelDistance.value == 0) {
@@ -44,6 +56,8 @@ bool DiffDriveService::OnStart() {
 
   speed_l_ = speed_r_ = 0;
   last_ticks_valid = false;
+  actual_linear_velocity_ = 0;
+  actual_angular_velocity_ = 0;
   return true;
 }
 
@@ -66,6 +80,8 @@ void DiffDriveService::OnCreate() {
 void DiffDriveService::OnStop() {
   speed_l_ = speed_r_ = 0;
   last_ticks_valid = false;
+  actual_linear_velocity_ = 0;
+  actual_angular_velocity_ = 0;
 }
 
 void DiffDriveService::tick() {
@@ -152,6 +168,8 @@ void DiffDriveService::ProcessStatusUpdate() {
     int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
     float vx = static_cast<float>(d_left - d_right) / (2.0f * dt * static_cast<float>(WheelTicksPerMeter.value));
     float vr = -static_cast<float>(d_left + d_right) / (2.0f * dt * static_cast<float>(WheelTicksPerMeter.value));
+    actual_linear_velocity_ = vx;
+    actual_angular_velocity_ = vr;
     double data[6]{};
     data[0] = vx;
     data[5] = vr;

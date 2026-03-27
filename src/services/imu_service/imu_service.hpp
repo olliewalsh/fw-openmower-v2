@@ -24,6 +24,8 @@ class ImuService : public ImuServiceBase {
     return imu_found;
   }
 
+  uint16_t GetEmergencyReasons() const;
+
  protected:
   void OnCreate() override;
   bool OnStart() override;
@@ -37,13 +39,23 @@ class ImuService : public ImuServiceBase {
   int16_t data_raw_temperature;
   double axes[9]{};
   float temperature_degC;
+  bool collision_active_ = false;
+  bool gravity_initialized_ = false;
+  bool publish_axes_this_tick_ = false;
+  uint16_t collision_trigger_count_ = 0;
+  float last_actual_speed_ = 0.0f;
+  double gravity_estimate_[3]{};
+  double linear_acceleration_[3]{};
+  double previous_linear_acceleration_[3]{};
 
   // Default (YardForce mainboard) mapping: +X-Y-Z
   etl::array<uint8_t, 3> axis_remap_idx_{1, 2, 3};
   etl::array<int8_t, 3> axis_remap_sign_{1, -1, -1};
 
+  void UpdateCollisionDetection(uint32_t now_micros);
+  void SetCollisionEmergency(bool active);
   void tick();
-  ServiceSchedule tick_schedule_{*this, 10'000, XBOT_FUNCTION_FOR_METHOD(ImuService, &ImuService::tick, this)};
+  ServiceSchedule tick_schedule_{*this, 5'000, XBOT_FUNCTION_FOR_METHOD(ImuService, &ImuService::tick, this)};
 };
 
 #endif  // IMU_SERVICE_HPP
