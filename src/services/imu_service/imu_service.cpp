@@ -18,7 +18,7 @@ constexpr float kDefaultCollisionAccelThreshold = 8.0f;
 constexpr float kDefaultCollisionGyroThreshold = 1.8f;
 constexpr float kDefaultCollisionJerkThreshold = 120.0f;
 constexpr float kDefaultCollisionGravityFilterHz = 1.5f;
-constexpr float kDefaultCollisionWheelCurrentThreshold = 0.6f;
+constexpr float kDefaultCollisionWheelCurrentThreshold = 0.3f;
 constexpr float kDefaultCollisionActualLinearSpeedThreshold = 0.03f;
 constexpr float kDefaultCollisionActualAngularSpeedThreshold = 0.15f;
 constexpr float kDefaultCollisionActualSpeedDropThreshold = 0.06f;
@@ -139,7 +139,17 @@ bool ImuService::OnStart() {
   return true;
 }
 
-uint16_t ImuService::GetEmergencyReasons() const {
+uint16_t ImuService::GetEmergencyReasons() {
+  const uint16_t emergency_reasons = emergency_service.GetEmergencyReasons();
+  if (collision_active_ && (emergency_reasons & EmergencyReason::COLLISION) != 0 &&
+      (emergency_reasons & EmergencyReason::LATCH) == 0) {
+    collision_active_ = false;
+    collision_trigger_count_ = 0;
+  } else if (collision_active_ && (emergency_reasons & EmergencyReason::COLLISION) == 0) {
+    collision_active_ = false;
+    collision_trigger_count_ = 0;
+  }
+
   return collision_active_ ? static_cast<uint16_t>(EmergencyReason::COLLISION | EmergencyReason::LATCH) : 0;
 }
 
@@ -196,16 +206,6 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   (void)now_micros;
   if (DisableCollisionDetection.value != 0) {
     return;
-  }
-
-  const uint16_t emergency_reasons = emergency_service.GetEmergencyReasons();
-  if (collision_active_ && (emergency_reasons & EmergencyReason::COLLISION) != 0 &&
-      (emergency_reasons & EmergencyReason::LATCH) == 0) {
-    collision_active_ = false;
-    collision_trigger_count_ = 0;
-  } else if (collision_active_ && (emergency_reasons & EmergencyReason::COLLISION) == 0) {
-    collision_active_ = false;
-    collision_trigger_count_ = 0;
   }
 
   constexpr double dt = 0.005;

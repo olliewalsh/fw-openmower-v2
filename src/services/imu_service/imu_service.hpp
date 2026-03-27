@@ -24,7 +24,7 @@ class ImuService : public ImuServiceBase {
     return imu_found;
   }
 
-  uint16_t GetEmergencyReasons() const;
+  uint16_t GetEmergencyReasons();
 
  protected:
   void OnCreate() override;
