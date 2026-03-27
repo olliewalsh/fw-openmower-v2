@@ -14,14 +14,14 @@
 #include "services.hpp"
 
 namespace {
-constexpr float kDefaultCollisionAccelThreshold = 12.0f;
-constexpr float kDefaultCollisionGyroThreshold = 2.5f;
-constexpr float kDefaultCollisionJerkThreshold = 250.0f;
+constexpr float kDefaultCollisionAccelThreshold = 8.0f;
+constexpr float kDefaultCollisionGyroThreshold = 1.8f;
+constexpr float kDefaultCollisionJerkThreshold = 120.0f;
 constexpr float kDefaultCollisionGravityFilterHz = 1.5f;
-constexpr float kDefaultCollisionWheelCurrentThreshold = 4.0f;
-constexpr float kDefaultCollisionActualLinearSpeedThreshold = 0.08f;
-constexpr float kDefaultCollisionActualAngularSpeedThreshold = 0.5f;
-constexpr float kDefaultCollisionActualSpeedDropThreshold = 0.2f;
+constexpr float kDefaultCollisionWheelCurrentThreshold = 0.6f;
+constexpr float kDefaultCollisionActualLinearSpeedThreshold = 0.03f;
+constexpr float kDefaultCollisionActualAngularSpeedThreshold = 0.15f;
+constexpr float kDefaultCollisionActualSpeedDropThreshold = 0.06f;
 constexpr uint16_t kDefaultCollisionConsecutiveSamples = 2;
 }  // namespace
 
@@ -279,8 +279,9 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   const bool speed_drop = esc_state_valid && last_actual_speed_ >= actual_linear_speed_threshold &&
                           (last_actual_speed_ - actual_speed) >= actual_speed_drop_threshold;
   const bool drive_corroborated = current_spike || speed_drop;
+  const bool collision_candidate = (motion_armed && imu_trigger) || (imu_trigger && drive_corroborated);
 
-  if (motion_armed && imu_trigger && drive_corroborated) {
+  if (collision_candidate) {
     collision_trigger_count_ =
         collision_trigger_count_ < consecutive_samples ? collision_trigger_count_ + 1 : consecutive_samples;
   } else {
