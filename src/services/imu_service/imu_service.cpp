@@ -251,9 +251,11 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
     linear_acceleration_[i] = axes[i] - gravity_estimate_[i];
 
     const double jerk = (linear_acceleration_[i] - previous_linear_acceleration_[i]) / dt;
-    accel_sq += linear_acceleration_[i] * linear_acceleration_[i];
-    gyro_sq += axes[3 + i] * axes[3 + i];
-    jerk_sq += jerk * jerk;
+    if (i != 2) {
+      accel_sq += linear_acceleration_[i] * linear_acceleration_[i];
+      gyro_sq += axes[3 + i] * axes[3 + i];
+      jerk_sq += jerk * jerk;
+    }
     previous_linear_acceleration_[i] = linear_acceleration_[i];
   }
 
