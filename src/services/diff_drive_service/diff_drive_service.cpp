@@ -6,6 +6,7 @@
 
 #include <ulog.h>
 
+#include <cmath>
 #include <drivers/motor/motor_driver.hpp>
 #include <services.hpp>
 #include <xbot-service/portable/system.hpp>
@@ -32,6 +33,11 @@ WheelSpeedController::Gains DiffDriveService::GetConfiguredWheelSpeedControllerG
   return gains;
 }
 
+float DiffDriveService::GetNominalWheelSpeedLimit() const {
+  const auto gains = GetConfiguredWheelSpeedControllerGains();
+  return 1.0f / gains.feedforward;
+}
+
 void DiffDriveService::UpdateControllerGains() {
   const auto gains = GetConfiguredWheelSpeedControllerGains();
   left_wheel_controller_.SetGains(gains);
@@ -40,8 +46,15 @@ void DiffDriveService::UpdateControllerGains() {
 
 void DiffDriveService::UpdateDutyFromMeasuredSpeeds(float dt) {
   UpdateControllerGains();
+  const float scale = wheel_speed_limit_estimator_.ScaleForTargets(desired_speed_l_, desired_speed_r_);
+  left_wheel_controller_.SetTargetSpeed(desired_speed_l_ * scale);
+  right_wheel_controller_.SetTargetSpeed(desired_speed_r_ * scale);
   left_wheel_controller_.Update(dt);
   right_wheel_controller_.Update(dt);
+  wheel_speed_limit_estimator_.Update(dt, GetNominalWheelSpeedLimit(), left_wheel_controller_.target_speed(),
+                                      right_wheel_controller_.target_speed(), left_wheel_controller_.measured_speed(),
+                                      right_wheel_controller_.measured_speed(), left_wheel_controller_.duty(),
+                                      right_wheel_controller_.duty());
 }
 
 void DiffDriveService::OnEmergencyChangedEvent() {
@@ -51,6 +64,9 @@ void DiffDriveService::OnEmergencyChangedEvent() {
     return;
   }
   chMtxLock(&state_mutex_);
+  desired_speed_l_ = 0;
+  desired_speed_r_ = 0;
+  wheel_speed_limit_estimator_.Reset(GetNominalWheelSpeedLimit());
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   // Instantly send the 0 duty cycle
@@ -75,6 +91,9 @@ bool DiffDriveService::OnStart() {
   }
 
   UpdateControllerGains();
+  desired_speed_l_ = 0;
+  desired_speed_r_ = 0;
+  wheel_speed_limit_estimator_.Reset(GetNominalWheelSpeedLimit());
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
@@ -98,6 +117,9 @@ void DiffDriveService::OnCreate() {
 }
 
 void DiffDriveService::OnStop() {
+  desired_speed_l_ = 0;
+  desired_speed_r_ = 0;
+  wheel_speed_limit_estimator_.Reset(GetNominalWheelSpeedLimit());
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
@@ -109,6 +131,9 @@ void DiffDriveService::tick() {
   // Check, if we recently received duty. If not, set to zero for safety
   if (xbot::service::system::getTimeMicros() - last_duty_received_micros_ > 1'000'000) {
     // it's ok to set it here, because we know that duty_set_ is false (we're in a timeout after all)
+    desired_speed_l_ = 0;
+    desired_speed_r_ = 0;
+    wheel_speed_limit_estimator_.Reset(GetNominalWheelSpeedLimit());
     left_wheel_controller_.Reset();
     right_wheel_controller_.Reset();
   }
@@ -221,8 +246,8 @@ void DiffDriveService::OnControlTwistChanged(const double* new_value, uint32_t l
   const auto linear = static_cast<float>(new_value[0]);
   const auto angular = static_cast<float>(new_value[5]);
 
-  right_wheel_controller_.SetTargetSpeed(linear + 0.5f * static_cast<float>(WheelDistance.value) * angular);
-  left_wheel_controller_.SetTargetSpeed(linear - 0.5f * static_cast<float>(WheelDistance.value) * angular);
+  desired_speed_r_ = linear + 0.5f * static_cast<float>(WheelDistance.value) * angular;
+  desired_speed_l_ = linear - 0.5f * static_cast<float>(WheelDistance.value) * angular;
   UpdateDutyFromMeasuredSpeeds(0.0f);
 
   // Limit comms frequency to once per tick()
