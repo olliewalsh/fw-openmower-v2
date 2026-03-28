@@ -131,11 +131,9 @@ bool ImuService::OnStart() {
   publish_axes_this_tick_ = false;
   collision_trigger_count_ = 0;
   last_actual_speed_ = 0.0f;
-  last_actual_linear_velocity_ = 0.0f;
   memset(gravity_estimate_, 0x00, sizeof(gravity_estimate_));
   memset(linear_acceleration_, 0x00, sizeof(linear_acceleration_));
-  memset(collision_acceleration_, 0x00, sizeof(collision_acceleration_));
-  memset(previous_collision_acceleration_, 0x00, sizeof(previous_collision_acceleration_));
+  memset(previous_linear_acceleration_, 0x00, sizeof(previous_linear_acceleration_));
   SetCollisionEmergency(false);
 
   return true;
@@ -236,8 +234,7 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
     for (size_t i = 0; i < 3; ++i) {
       gravity_estimate_[i] = axes[i];
       linear_acceleration_[i] = 0.0;
-      collision_acceleration_[i] = 0.0;
-      previous_collision_acceleration_[i] = 0.0;
+      previous_linear_acceleration_[i] = 0.0;
     }
     gravity_initialized_ = true;
     SetCollisionEmergency(false);
@@ -254,23 +251,15 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   float actual_angular_velocity = 0.0f;
   bool esc_state_valid = false;
   diff_drive.GetCollisionMetrics(avg_abs_current, actual_linear_velocity, actual_angular_velocity, esc_state_valid);
-
-  const double drive_linear_acceleration =
-      esc_state_valid ? (actual_linear_velocity - last_actual_linear_velocity_) / dt : 0.0;
-  for (size_t i = 0; i < 3; ++i) {
-    collision_acceleration_[i] = linear_acceleration_[i];
-  }
-  collision_acceleration_[0] -= drive_linear_acceleration;
-
   double gyro_sq = 0.0;
   double jerk_sq = 0.0;
   for (size_t i = 0; i < 3; ++i) {
-    const double jerk = (collision_acceleration_[i] - previous_collision_acceleration_[i]) / dt;
+    const double jerk = (linear_acceleration_[i] - previous_linear_acceleration_[i]) / dt;
     if (i != 2) {
       gyro_sq += axes[3 + i] * axes[3 + i];
       jerk_sq += jerk * jerk;
     }
-    previous_collision_acceleration_[i] = collision_acceleration_[i];
+    previous_linear_acceleration_[i] = linear_acceleration_[i];
   }
 
   const double gyro_mag = std::sqrt(gyro_sq);
@@ -299,7 +288,6 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   }
 
   last_actual_speed_ = actual_speed;
-  last_actual_linear_velocity_ = actual_linear_velocity;
 }
 
 void ImuService::SetCollisionEmergency(bool active) {
