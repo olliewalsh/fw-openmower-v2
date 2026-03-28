@@ -14,6 +14,7 @@
 #include <xbot-service/portable/socket.hpp>
 
 #include "wheel_speed_controller.hpp"
+#include "wheel_speed_limit_estimator.hpp"
 
 using namespace xbot::service;
 using namespace xbot::driver::motor;
@@ -38,13 +39,17 @@ class DiffDriveService : public DiffDriveServiceBase {
   uint32_t last_ticks_right = 0;
   bool last_ticks_valid = false;
   uint32_t last_ticks_micros_ = 0;
+  float desired_speed_l_ = 0;
+  float desired_speed_r_ = 0;
 
   static constexpr WheelSpeedController::Gains kDefaultWheelSpeedControllerGains{1.5f, 0.35f, 1.5f};
   WheelSpeedController left_wheel_controller_{kDefaultWheelSpeedControllerGains};
   WheelSpeedController right_wheel_controller_{kDefaultWheelSpeedControllerGains};
+  WheelSpeedLimitEstimator wheel_speed_limit_estimator_{};
   bool duty_sent_ = false;
 
   WheelSpeedController::Gains GetConfiguredWheelSpeedControllerGains() const;
+  float GetNominalWheelSpeedLimit() const;
   void UpdateControllerGains();
   void UpdateDutyFromMeasuredSpeeds(float dt);
 
