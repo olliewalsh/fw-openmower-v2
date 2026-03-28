@@ -12,6 +12,38 @@
 
 using namespace xbot::driver::motor;
 
+WheelSpeedController::Gains DiffDriveService::GetConfiguredWheelSpeedControllerGains() const {
+  WheelSpeedController::Gains gains{
+      static_cast<float>(WheelSpeedFeedforward.value),
+      static_cast<float>(WheelSpeedKp.value),
+      static_cast<float>(WheelSpeedKi.value),
+  };
+
+  if (gains.feedforward <= 0.0f) {
+    gains.feedforward = kDefaultWheelSpeedControllerGains.feedforward;
+  }
+  if (gains.kp < 0.0f) {
+    gains.kp = kDefaultWheelSpeedControllerGains.kp;
+  }
+  if (gains.ki < 0.0f) {
+    gains.ki = kDefaultWheelSpeedControllerGains.ki;
+  }
+
+  return gains;
+}
+
+void DiffDriveService::UpdateControllerGains() {
+  const auto gains = GetConfiguredWheelSpeedControllerGains();
+  left_wheel_controller_.SetGains(gains);
+  right_wheel_controller_.SetGains(gains);
+}
+
+void DiffDriveService::UpdateDutyFromMeasuredSpeeds(float dt) {
+  UpdateControllerGains();
+  left_wheel_controller_.Update(dt);
+  right_wheel_controller_.Update(dt);
+}
+
 void DiffDriveService::OnEmergencyChangedEvent() {
   bool emergency = emergency_service.GetEmergencyReasons() != 0;
   if (!emergency) {
@@ -19,8 +51,8 @@ void DiffDriveService::OnEmergencyChangedEvent() {
     return;
   }
   chMtxLock(&state_mutex_);
-  speed_l_ = 0;
-  speed_r_ = 0;
+  left_wheel_controller_.Reset();
+  right_wheel_controller_.Reset();
   // Instantly send the 0 duty cycle
   SetDuty();
   chMtxUnlock(&state_mutex_);
@@ -42,7 +74,9 @@ bool DiffDriveService::OnStart() {
     return false;
   }
 
-  speed_l_ = speed_r_ = 0;
+  UpdateControllerGains();
+  left_wheel_controller_.Reset();
+  right_wheel_controller_.Reset();
   last_ticks_valid = false;
   return true;
 }
@@ -64,7 +98,8 @@ void DiffDriveService::OnCreate() {
 }
 
 void DiffDriveService::OnStop() {
-  speed_l_ = speed_r_ = 0;
+  left_wheel_controller_.Reset();
+  right_wheel_controller_.Reset();
   last_ticks_valid = false;
 }
 
@@ -74,7 +109,8 @@ void DiffDriveService::tick() {
   // Check, if we recently received duty. If not, set to zero for safety
   if (xbot::service::system::getTimeMicros() - last_duty_received_micros_ > 1'000'000) {
     // it's ok to set it here, because we know that duty_set_ is false (we're in a timeout after all)
-    speed_l_ = speed_r_ = 0;
+    left_wheel_controller_.Reset();
+    right_wheel_controller_.Reset();
   }
 
   if (!duty_sent_) {
@@ -107,8 +143,9 @@ void DiffDriveService::SetDuty() {
     left_esc_driver_->SetDuty(0);
     right_esc_driver_->SetDuty(0);
   } else {
-    left_esc_driver_->SetDuty(speed_l_);
-    right_esc_driver_->SetDuty(speed_r_);
+    left_esc_driver_->SetDuty(left_wheel_controller_.duty());
+    // The right motor is installed with opposite polarity.
+    right_esc_driver_->SetDuty(-right_wheel_controller_.duty());
   }
   duty_sent_ = true;
 }
@@ -152,9 +189,11 @@ void DiffDriveService::ProcessStatusUpdate() {
     int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
     const float wheel_ticks_per_meter = static_cast<float>(WheelTicksPerMeter.value);
     const float wheel_distance = static_cast<float>(WheelDistance.value);
-    float vx = static_cast<float>(d_left - d_right) / (2.0f * dt * wheel_ticks_per_meter);
-    // Convert differential wheel linear speed into yaw rate in rad/s.
-    float vr = -static_cast<float>(d_left + d_right) / (2.0f * dt * wheel_ticks_per_meter * wheel_distance);
+    left_wheel_controller_.SetMeasuredSpeed(static_cast<float>(d_left) / (dt * wheel_ticks_per_meter));
+    right_wheel_controller_.SetMeasuredSpeed(-static_cast<float>(d_right) / (dt * wheel_ticks_per_meter));
+    float vx = 0.5f * (left_wheel_controller_.measured_speed() + right_wheel_controller_.measured_speed());
+    float vr = (right_wheel_controller_.measured_speed() - left_wheel_controller_.measured_speed()) / wheel_distance;
+    UpdateDutyFromMeasuredSpeeds(dt);
     double data[6]{};
     data[0] = vx;
     data[5] = vr;
@@ -182,20 +221,9 @@ void DiffDriveService::OnControlTwistChanged(const double* new_value, uint32_t l
   const auto linear = static_cast<float>(new_value[0]);
   const auto angular = static_cast<float>(new_value[5]);
 
-  // TODO: update this to rad/s values and implement xESC speed control
-  speed_r_ = -(linear + 0.5f * static_cast<float>(WheelDistance.value) * angular);
-  speed_l_ = linear - 0.5f * static_cast<float>(WheelDistance.value) * angular;
-
-  if (speed_l_ >= 1.0) {
-    speed_l_ = 1.0;
-  } else if (speed_l_ <= -1.0) {
-    speed_l_ = -1.0;
-  }
-  if (speed_r_ >= 1.0) {
-    speed_r_ = 1.0;
-  } else if (speed_r_ <= -1.0) {
-    speed_r_ = -1.0;
-  }
+  right_wheel_controller_.SetTargetSpeed(linear + 0.5f * static_cast<float>(WheelDistance.value) * angular);
+  left_wheel_controller_.SetTargetSpeed(linear - 0.5f * static_cast<float>(WheelDistance.value) * angular);
+  UpdateDutyFromMeasuredSpeeds(0.0f);
 
   // Limit comms frequency to once per tick()
   if (!duty_sent_) {
