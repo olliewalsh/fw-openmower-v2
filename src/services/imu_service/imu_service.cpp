@@ -15,7 +15,6 @@
 
 namespace {
 constexpr float kDefaultCollisionAccelThreshold = 8.0f;
-constexpr float kDefaultCollisionGyroThreshold = 1.8f;
 constexpr float kDefaultCollisionJerkThreshold = 120.0f;
 constexpr float kDefaultCollisionGravityFilterHz = 1.5f;
 constexpr float kDefaultCollisionSignalFilterHz = 25.0f;
@@ -219,8 +218,6 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
       CollisionSignalFilterHz.value > 0.0f ? CollisionSignalFilterHz.value : kDefaultCollisionSignalFilterHz;
   const double signal_tau = 1.0 / (two_pi * signal_cutoff_hz);
   const double signal_alpha = dt / (signal_tau + dt);
-  const double gyro_threshold =
-      CollisionGyroThreshold.value > 0.0f ? CollisionGyroThreshold.value : kDefaultCollisionGyroThreshold;
   const double jerk_threshold =
       CollisionJerkThreshold.value > 0.0f ? CollisionJerkThreshold.value : kDefaultCollisionJerkThreshold;
   const float wheel_current_threshold = CollisionWheelCurrentThreshold.value > 0.0f
