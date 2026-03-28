@@ -153,8 +153,11 @@ void DiffDriveService::ProcessStatusUpdate() {
     float dt = static_cast<float>(micros - last_ticks_micros_) / 1'000'000.0f;
     int32_t d_left = static_cast<int32_t>(left_esc_state_.tacho - last_ticks_left);
     int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
-    float vx = static_cast<float>(d_left - d_right) / (2.0f * dt * static_cast<float>(WheelTicksPerMeter.value));
-    float vr = -static_cast<float>(d_left + d_right) / (2.0f * dt * static_cast<float>(WheelTicksPerMeter.value));
+    const float wheel_ticks_per_meter = static_cast<float>(WheelTicksPerMeter.value);
+    const float wheel_distance = static_cast<float>(WheelDistance.value);
+    float vx = static_cast<float>(d_left - d_right) / (2.0f * dt * wheel_ticks_per_meter);
+    // Convert differential wheel linear speed into yaw rate in rad/s.
+    float vr = -static_cast<float>(d_left + d_right) / (2.0f * dt * wheel_ticks_per_meter * wheel_distance);
     double data[6]{};
     data[0] = vx;
     data[5] = vr;
