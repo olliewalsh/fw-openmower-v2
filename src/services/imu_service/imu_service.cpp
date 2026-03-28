@@ -213,8 +213,6 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
       CollisionGravityFilterHz.value > 0.0f ? CollisionGravityFilterHz.value : kDefaultCollisionGravityFilterHz;
   const double tau = 1.0 / (two_pi * cutoff_hz);
   const double alpha = dt / (tau + dt);
-  const double accel_threshold =
-      CollisionAccelThreshold.value > 0.0f ? CollisionAccelThreshold.value : kDefaultCollisionAccelThreshold;
   const double gyro_threshold =
       CollisionGyroThreshold.value > 0.0f ? CollisionGyroThreshold.value : kDefaultCollisionGyroThreshold;
   const double jerk_threshold =
@@ -264,20 +262,17 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   }
   collision_acceleration_[0] -= drive_linear_acceleration;
 
-  double accel_sq = 0.0;
   double gyro_sq = 0.0;
   double jerk_sq = 0.0;
   for (size_t i = 0; i < 3; ++i) {
     const double jerk = (collision_acceleration_[i] - previous_collision_acceleration_[i]) / dt;
     if (i != 2) {
-      accel_sq += collision_acceleration_[i] * collision_acceleration_[i];
       gyro_sq += axes[3 + i] * axes[3 + i];
       jerk_sq += jerk * jerk;
     }
     previous_collision_acceleration_[i] = collision_acceleration_[i];
   }
 
-  const double accel_mag = std::sqrt(accel_sq);
   const double gyro_mag = std::sqrt(gyro_sq);
   const double jerk_mag = std::sqrt(jerk_sq);
   const float actual_speed =
@@ -285,7 +280,7 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
 
   const bool motion_armed = esc_state_valid && (std::fabs(actual_linear_velocity) >= actual_linear_speed_threshold ||
                                                 std::fabs(actual_angular_velocity) >= actual_angular_speed_threshold);
-  const bool imu_trigger = accel_mag >= accel_threshold && (jerk_mag >= jerk_threshold || gyro_mag >= gyro_threshold);
+  const bool imu_trigger = jerk_mag >= jerk_threshold || gyro_mag >= gyro_threshold;
   const bool current_spike = esc_state_valid && avg_abs_current >= wheel_current_threshold;
   const bool speed_drop = esc_state_valid && last_actual_speed_ >= actual_linear_speed_threshold &&
                           (last_actual_speed_ - actual_speed) >= actual_speed_drop_threshold;
