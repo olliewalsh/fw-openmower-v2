@@ -279,13 +279,13 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
 
   const bool motion_armed = esc_state_valid && (std::fabs(actual_linear_velocity) >= actual_linear_speed_threshold ||
                                                 std::fabs(actual_angular_velocity) >= actual_angular_speed_threshold);
-  const bool imu_trigger = jerk_mag >= jerk_threshold || gyro_mag >= gyro_threshold;
+  const bool imu_trigger = jerk_mag >= jerk_threshold;
   const bool current_spike = esc_state_valid && avg_abs_current >= wheel_current_threshold;
   const float speed_drop_value = last_actual_speed_ - actual_speed;
   const bool speed_drop = esc_state_valid && last_actual_speed_ >= actual_linear_speed_threshold &&
                           speed_drop_value >= actual_speed_drop_threshold;
   const bool drive_corroborated = current_spike || speed_drop;
-  const bool collision_candidate = (motion_armed && imu_trigger) || (imu_trigger && drive_corroborated);
+  const bool collision_candidate = motion_armed && imu_trigger && drive_corroborated;
 
   if (collision_candidate) {
     collision_trigger_count_ =
