@@ -6,11 +6,67 @@
 
 #include <ulog.h>
 
+#include <cmath>
 #include <drivers/motor/motor_driver.hpp>
 #include <services.hpp>
 #include <xbot-service/portable/system.hpp>
 
 using namespace xbot::driver::motor;
+
+WheelSpeedController::Gains DiffDriveService::GetConfiguredWheelSpeedControllerGains() const {
+  WheelSpeedController::Gains gains{
+      static_cast<float>(WheelSpeedFeedforward.value),
+      static_cast<float>(WheelSpeedKp.value),
+      static_cast<float>(WheelSpeedKi.value),
+  };
+
+  if (gains.feedforward <= 0.0f) {
+    gains.feedforward = kDefaultWheelSpeedControllerGains.feedforward;
+  }
+  if (gains.kp < 0.0f) {
+    gains.kp = kDefaultWheelSpeedControllerGains.kp;
+  }
+  if (gains.ki < 0.0f) {
+    gains.ki = kDefaultWheelSpeedControllerGains.ki;
+  }
+
+  return gains;
+}
+
+float DiffDriveService::GetMaxDuty() const {
+  const auto val = static_cast<float>(MaxDuty.value);
+  if (val > 0.0f && val <= 1.0f) {
+    return val;
+  }
+  return 0.95f;
+}
+
+float DiffDriveService::GetNominalWheelSpeedLimit() const {
+  const auto gains = GetConfiguredWheelSpeedControllerGains();
+  return GetMaxDuty() / gains.feedforward;
+}
+
+void DiffDriveService::UpdateControllerGains() {
+  const auto gains = GetConfiguredWheelSpeedControllerGains();
+  left_wheel_controller_.SetGains(gains);
+  right_wheel_controller_.SetGains(gains);
+  const float max_duty = GetMaxDuty();
+  left_wheel_controller_.SetMaxDuty(max_duty);
+  right_wheel_controller_.SetMaxDuty(max_duty);
+}
+
+void DiffDriveService::UpdateDutyFromMeasuredSpeeds(float dt) {
+  UpdateControllerGains();
+  const float nominal_limit = GetNominalWheelSpeedLimit();
+  const float abs_l = std::fabs(desired_speed_l_);
+  const float abs_r = std::fabs(desired_speed_r_);
+  const float peak = abs_l > abs_r ? abs_l : abs_r;
+  const float scale = (nominal_limit > 0.0f && peak > nominal_limit) ? nominal_limit / peak : 1.0f;
+  left_wheel_controller_.SetTargetSpeed(desired_speed_l_ * scale);
+  right_wheel_controller_.SetTargetSpeed(desired_speed_r_ * scale);
+  left_wheel_controller_.Update(dt);
+  right_wheel_controller_.Update(dt);
+}
 
 void DiffDriveService::OnEmergencyChangedEvent() {
   bool emergency = emergency_service.GetEmergencyReasons() != 0;
@@ -19,8 +75,10 @@ void DiffDriveService::OnEmergencyChangedEvent() {
     return;
   }
   chMtxLock(&state_mutex_);
-  speed_l_ = 0;
-  speed_r_ = 0;
+  desired_speed_l_ = 0;
+  desired_speed_r_ = 0;
+  left_wheel_controller_.Reset();
+  right_wheel_controller_.Reset();
   // Instantly send the 0 duty cycle
   SetDuty();
   chMtxUnlock(&state_mutex_);
@@ -42,7 +100,11 @@ bool DiffDriveService::OnStart() {
     return false;
   }
 
-  speed_l_ = speed_r_ = 0;
+  UpdateControllerGains();
+  desired_speed_l_ = 0;
+  desired_speed_r_ = 0;
+  left_wheel_controller_.Reset();
+  right_wheel_controller_.Reset();
   last_ticks_valid = false;
   return true;
 }
@@ -64,7 +126,10 @@ void DiffDriveService::OnCreate() {
 }
 
 void DiffDriveService::OnStop() {
-  speed_l_ = speed_r_ = 0;
+  desired_speed_l_ = 0;
+  desired_speed_r_ = 0;
+  left_wheel_controller_.Reset();
+  right_wheel_controller_.Reset();
   last_ticks_valid = false;
 }
 
@@ -74,7 +139,10 @@ void DiffDriveService::tick() {
   // Check, if we recently received duty. If not, set to zero for safety
   if (xbot::service::system::getTimeMicros() - last_duty_received_micros_ > 1'000'000) {
     // it's ok to set it here, because we know that duty_set_ is false (we're in a timeout after all)
-    speed_l_ = speed_r_ = 0;
+    desired_speed_l_ = 0;
+    desired_speed_r_ = 0;
+    left_wheel_controller_.Reset();
+    right_wheel_controller_.Reset();
   }
 
   if (!duty_sent_) {
@@ -107,8 +175,22 @@ void DiffDriveService::SetDuty() {
     left_esc_driver_->SetDuty(0);
     right_esc_driver_->SetDuty(0);
   } else {
-    left_esc_driver_->SetDuty(speed_l_);
-    right_esc_driver_->SetDuty(speed_r_);
+    float left_duty = left_wheel_controller_.duty();
+    // The right motor is installed with opposite polarity.
+    float right_duty = -right_wheel_controller_.duty();
+    // Scale both duties proportionally if either exceeds the limit,
+    // preserving the left/right ratio so the turn radius is maintained.
+    const float max_duty = GetMaxDuty();
+    const float abs_l = std::fabs(left_duty);
+    const float abs_r = std::fabs(right_duty);
+    const float peak = abs_l > abs_r ? abs_l : abs_r;
+    if (peak > max_duty) {
+      const float scale = max_duty / peak;
+      left_duty *= scale;
+      right_duty *= scale;
+    }
+    left_esc_driver_->SetDuty(left_duty);
+    right_esc_driver_->SetDuty(right_duty);
   }
   duty_sent_ = true;
 }
@@ -152,6 +234,7 @@ void DiffDriveService::ProcessStatusUpdate() {
     int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
     float vx = static_cast<float>(d_left - d_right) / (2.0f * dt * static_cast<float>(WheelTicksPerMeter.value));
     float vr = -static_cast<float>(d_left + d_right) / (2.0f * dt * static_cast<float>(WheelTicksPerMeter.value));
+    UpdateDutyFromMeasuredSpeeds(dt);
     double data[6]{};
     data[0] = vx;
     data[5] = vr;
@@ -179,20 +262,9 @@ void DiffDriveService::OnControlTwistChanged(const double* new_value, uint32_t l
   const auto linear = static_cast<float>(new_value[0]);
   const auto angular = static_cast<float>(new_value[5]);
 
-  // TODO: update this to rad/s values and implement xESC speed control
-  speed_r_ = -(linear + 0.5f * static_cast<float>(WheelDistance.value) * angular);
-  speed_l_ = linear - 0.5f * static_cast<float>(WheelDistance.value) * angular;
-
-  if (speed_l_ >= 1.0) {
-    speed_l_ = 1.0;
-  } else if (speed_l_ <= -1.0) {
-    speed_l_ = -1.0;
-  }
-  if (speed_r_ >= 1.0) {
-    speed_r_ = 1.0;
-  } else if (speed_r_ <= -1.0) {
-    speed_r_ = -1.0;
-  }
+  desired_speed_r_ = linear + 0.5f * static_cast<float>(WheelDistance.value) * angular;
+  desired_speed_l_ = linear - 0.5f * static_cast<float>(WheelDistance.value) * angular;
+  UpdateDutyFromMeasuredSpeeds(0.0f);
 
   // Limit comms frequency to once per tick()
   if (!duty_sent_) {
