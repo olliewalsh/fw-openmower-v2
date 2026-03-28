@@ -195,10 +195,10 @@ void ImuService::tick() {
   }*/
 
   UpdateCollisionDetection(xbot::service::system::getTimeMicros());
+  SendCollisionDebug(collision_debug_, 10);
   publish_axes_this_tick_ = !publish_axes_this_tick_;
   if (publish_axes_this_tick_) {
     SendAxes(axes, 9);
-    SendCollisionDebug(collision_debug_, 10);
   }
 }
 
