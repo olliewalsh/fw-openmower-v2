@@ -46,7 +46,9 @@ class ImuService : public ImuServiceBase {
   float last_actual_speed_ = 0.0f;
   double gravity_estimate_[3]{};
   double linear_acceleration_[3]{};
-  double previous_linear_acceleration_[3]{};
+  double filtered_linear_acceleration_[3]{};
+  double previous_filtered_linear_acceleration_[3]{};
+  double collision_debug_[10]{};
 
   // Default (YardForce mainboard) mapping: +X-Y-Z
   etl::array<uint8_t, 3> axis_remap_idx_{1, 2, 3};

@@ -18,6 +18,7 @@ constexpr float kDefaultCollisionAccelThreshold = 8.0f;
 constexpr float kDefaultCollisionGyroThreshold = 1.8f;
 constexpr float kDefaultCollisionJerkThreshold = 120.0f;
 constexpr float kDefaultCollisionGravityFilterHz = 1.5f;
+constexpr float kDefaultCollisionSignalFilterHz = 25.0f;
 constexpr float kDefaultCollisionWheelCurrentThreshold = 0.3f;
 constexpr float kDefaultCollisionActualLinearSpeedThreshold = 0.03f;
 constexpr float kDefaultCollisionActualAngularSpeedThreshold = 0.15f;
@@ -133,7 +134,9 @@ bool ImuService::OnStart() {
   last_actual_speed_ = 0.0f;
   memset(gravity_estimate_, 0x00, sizeof(gravity_estimate_));
   memset(linear_acceleration_, 0x00, sizeof(linear_acceleration_));
-  memset(previous_linear_acceleration_, 0x00, sizeof(previous_linear_acceleration_));
+  memset(filtered_linear_acceleration_, 0x00, sizeof(filtered_linear_acceleration_));
+  memset(previous_filtered_linear_acceleration_, 0x00, sizeof(previous_filtered_linear_acceleration_));
+  memset(collision_debug_, 0x00, sizeof(collision_debug_));
   SetCollisionEmergency(false);
 
   return true;
@@ -196,6 +199,7 @@ void ImuService::tick() {
   publish_axes_this_tick_ = !publish_axes_this_tick_;
   if (publish_axes_this_tick_) {
     SendAxes(axes, 9);
+    SendCollisionDebug(collision_debug_, 10);
   }
 }
 
@@ -211,6 +215,10 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
       CollisionGravityFilterHz.value > 0.0f ? CollisionGravityFilterHz.value : kDefaultCollisionGravityFilterHz;
   const double tau = 1.0 / (two_pi * cutoff_hz);
   const double alpha = dt / (tau + dt);
+  const double signal_cutoff_hz =
+      CollisionSignalFilterHz.value > 0.0f ? CollisionSignalFilterHz.value : kDefaultCollisionSignalFilterHz;
+  const double signal_tau = 1.0 / (two_pi * signal_cutoff_hz);
+  const double signal_alpha = dt / (signal_tau + dt);
   const double gyro_threshold =
       CollisionGyroThreshold.value > 0.0f ? CollisionGyroThreshold.value : kDefaultCollisionGyroThreshold;
   const double jerk_threshold =
@@ -234,7 +242,8 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
     for (size_t i = 0; i < 3; ++i) {
       gravity_estimate_[i] = axes[i];
       linear_acceleration_[i] = 0.0;
-      previous_linear_acceleration_[i] = 0.0;
+      filtered_linear_acceleration_[i] = 0.0;
+      previous_filtered_linear_acceleration_[i] = 0.0;
     }
     gravity_initialized_ = true;
     SetCollisionEmergency(false);
@@ -244,6 +253,7 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   for (size_t i = 0; i < 3; ++i) {
     gravity_estimate_[i] += alpha * (axes[i] - gravity_estimate_[i]);
     linear_acceleration_[i] = axes[i] - gravity_estimate_[i];
+    filtered_linear_acceleration_[i] += signal_alpha * (linear_acceleration_[i] - filtered_linear_acceleration_[i]);
   }
 
   float avg_abs_current = 0.0f;
@@ -254,12 +264,12 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   double gyro_sq = 0.0;
   double jerk_sq = 0.0;
   for (size_t i = 0; i < 3; ++i) {
-    const double jerk = (linear_acceleration_[i] - previous_linear_acceleration_[i]) / dt;
+    const double jerk = (filtered_linear_acceleration_[i] - previous_filtered_linear_acceleration_[i]) / dt;
     if (i != 2) {
       gyro_sq += axes[3 + i] * axes[3 + i];
       jerk_sq += jerk * jerk;
     }
-    previous_linear_acceleration_[i] = linear_acceleration_[i];
+    previous_filtered_linear_acceleration_[i] = filtered_linear_acceleration_[i];
   }
 
   const double gyro_mag = std::sqrt(gyro_sq);
@@ -271,8 +281,9 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
                                                 std::fabs(actual_angular_velocity) >= actual_angular_speed_threshold);
   const bool imu_trigger = jerk_mag >= jerk_threshold || gyro_mag >= gyro_threshold;
   const bool current_spike = esc_state_valid && avg_abs_current >= wheel_current_threshold;
+  const float speed_drop_value = last_actual_speed_ - actual_speed;
   const bool speed_drop = esc_state_valid && last_actual_speed_ >= actual_linear_speed_threshold &&
-                          (last_actual_speed_ - actual_speed) >= actual_speed_drop_threshold;
+                          speed_drop_value >= actual_speed_drop_threshold;
   const bool drive_corroborated = current_spike || speed_drop;
   const bool collision_candidate = (motion_armed && imu_trigger) || (imu_trigger && drive_corroborated);
 
@@ -286,6 +297,17 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   if (!collision_active_ && collision_trigger_count_ >= consecutive_samples) {
     SetCollisionEmergency(true);
   }
+
+  collision_debug_[0] = filtered_linear_acceleration_[0];
+  collision_debug_[1] = filtered_linear_acceleration_[1];
+  collision_debug_[2] = filtered_linear_acceleration_[2];
+  collision_debug_[3] = jerk_mag;
+  collision_debug_[4] = gyro_mag;
+  collision_debug_[5] = actual_linear_velocity;
+  collision_debug_[6] = actual_angular_velocity;
+  collision_debug_[7] = avg_abs_current;
+  collision_debug_[8] = speed_drop_value;
+  collision_debug_[9] = collision_candidate ? 1.0 : 0.0;
 
   last_actual_speed_ = actual_speed;
 }
