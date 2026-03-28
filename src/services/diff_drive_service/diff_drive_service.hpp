@@ -13,6 +13,8 @@
 #include <globals.hpp>
 #include <xbot-service/portable/socket.hpp>
 
+#include "wheel_speed_controller.hpp"
+
 using namespace xbot::service;
 using namespace xbot::driver::motor;
 
@@ -37,9 +39,14 @@ class DiffDriveService : public DiffDriveServiceBase {
   bool last_ticks_valid = false;
   uint32_t last_ticks_micros_ = 0;
 
-  float speed_l_ = 0;
-  float speed_r_ = 0;
+  static constexpr WheelSpeedController::Gains kDefaultWheelSpeedControllerGains{1.5f, 0.35f, 1.5f};
+  WheelSpeedController left_wheel_controller_{kDefaultWheelSpeedControllerGains};
+  WheelSpeedController right_wheel_controller_{kDefaultWheelSpeedControllerGains};
   bool duty_sent_ = false;
+
+  WheelSpeedController::Gains GetConfiguredWheelSpeedControllerGains() const;
+  void UpdateControllerGains();
+  void UpdateDutyFromMeasuredSpeeds(float dt);
 
  public:
   explicit DiffDriveService(uint16_t service_id) : DiffDriveServiceBase(service_id, wa, sizeof(wa)) {
