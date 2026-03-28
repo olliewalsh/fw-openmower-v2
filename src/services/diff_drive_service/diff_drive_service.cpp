@@ -32,13 +32,15 @@ void DiffDriveService::SetDrivers(MotorDriver* left_driver, MotorDriver* right_d
 }
 
 void DiffDriveService::GetCollisionMetrics(float& avg_abs_current, float& actual_linear_velocity,
-                                           float& actual_angular_velocity, bool& esc_state_valid) {
+                                           float& actual_angular_velocity, float& commanded_linear_velocity,
+                                           bool& esc_state_valid) {
   chMtxLock(&state_mutex_);
   esc_state_valid = left_esc_state_valid_ || right_esc_state_valid_ ||
                     (xbot::service::system::getTimeMicros() - last_valid_esc_state_micros_ <= 250'000);
   avg_abs_current = 0.5f * (std::fabs(left_esc_state_.current_input) + std::fabs(right_esc_state_.current_input));
   actual_linear_velocity = actual_linear_velocity_;
   actual_angular_velocity = actual_angular_velocity_;
+  commanded_linear_velocity = commanded_linear_velocity_;
   chMtxUnlock(&state_mutex_);
 }
 
@@ -58,6 +60,7 @@ bool DiffDriveService::OnStart() {
   last_ticks_valid = false;
   actual_linear_velocity_ = 0;
   actual_angular_velocity_ = 0;
+  commanded_linear_velocity_ = 0;
   return true;
 }
 
@@ -82,6 +85,7 @@ void DiffDriveService::OnStop() {
   last_ticks_valid = false;
   actual_linear_velocity_ = 0;
   actual_angular_velocity_ = 0;
+  commanded_linear_velocity_ = 0;
 }
 
 void DiffDriveService::tick() {
@@ -197,6 +201,7 @@ void DiffDriveService::OnControlTwistChanged(const double* new_value, uint32_t l
   // we can only do forward and rotation around one axis
   const auto linear = static_cast<float>(new_value[0]);
   const auto angular = static_cast<float>(new_value[5]);
+  commanded_linear_velocity_ = linear;
 
   // TODO: update this to rad/s values and implement xESC speed control
   speed_r_ = -(linear + 0.5f * static_cast<float>(WheelDistance.value) * angular);

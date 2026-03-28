@@ -256,8 +256,10 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   float avg_abs_current = 0.0f;
   float actual_linear_velocity = 0.0f;
   float actual_angular_velocity = 0.0f;
+  float commanded_linear_velocity = 0.0f;
   bool esc_state_valid = false;
-  diff_drive.GetCollisionMetrics(avg_abs_current, actual_linear_velocity, actual_angular_velocity, esc_state_valid);
+  diff_drive.GetCollisionMetrics(avg_abs_current, actual_linear_velocity, actual_angular_velocity,
+                                 commanded_linear_velocity, esc_state_valid);
   double gyro_sq = 0.0;
   double jerk_sq = 0.0;
   for (size_t i = 0; i < 3; ++i) {
@@ -279,8 +281,9 @@ void ImuService::UpdateCollisionDetection(uint32_t now_micros) {
   const bool imu_trigger = jerk_mag >= jerk_threshold;
   const bool current_spike = esc_state_valid && avg_abs_current >= wheel_current_threshold;
   const float speed_drop_value = last_actual_speed_ - actual_speed;
+  const bool linear_command_active = std::fabs(commanded_linear_velocity) > 0.001f;
   const bool speed_drop = esc_state_valid && last_actual_speed_ >= actual_linear_speed_threshold &&
-                          speed_drop_value >= actual_speed_drop_threshold;
+                          speed_drop_value >= actual_speed_drop_threshold && linear_command_active;
   const bool drive_corroborated = current_spike || speed_drop;
   const bool collision_candidate = motion_armed && imu_trigger && drive_corroborated;
 

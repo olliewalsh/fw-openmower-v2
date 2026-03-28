@@ -34,6 +34,7 @@ class DiffDriveService : public DiffDriveServiceBase {
   uint32_t last_ticks_micros_ = 0;
   float actual_linear_velocity_ = 0;
   float actual_angular_velocity_ = 0;
+  float commanded_linear_velocity_ = 0;
 
   float speed_l_ = 0;
   float speed_r_ = 0;
@@ -45,7 +46,7 @@ class DiffDriveService : public DiffDriveServiceBase {
 
   void OnEmergencyChangedEvent();
   void GetCollisionMetrics(float &avg_abs_current, float &actual_linear_velocity, float &actual_angular_velocity,
-                           bool &esc_state_valid);
+                           float &commanded_linear_velocity, bool &esc_state_valid);
 
   void SetDrivers(MotorDriver *left_driver, MotorDriver *right_driver);
 
