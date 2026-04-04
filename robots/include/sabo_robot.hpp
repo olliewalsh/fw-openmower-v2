@@ -172,6 +172,9 @@ class SaboRobot : public MowerRobot {
   SaboCoverUIController cover_ui_{hardware_config};
   SaboInputDriver sabo_input_driver_{hardware_config};
   SaboBmsDriver bms_{hardware_config.bms};
+  float last_adapter_limit = std::numeric_limits<float>::quiet_NaN();
+  float last_charge_limit = std::numeric_limits<float>::quiet_NaN();
+  uint32_t last_charger_configuration_generation = 0;
 
   /**
    * @brief Configures and registers all Sabo-specific ADC1 sensors for voltage/current monitoring

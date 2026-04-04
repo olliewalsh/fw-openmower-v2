@@ -78,6 +78,11 @@ class PowerService : public PowerServiceBase {
     return SystemCurrent.valid ? SystemCurrent.value : std::numeric_limits<float>::quiet_NaN();
   }
 
+  uint32_t GetChargerConfigurationGeneration() {
+    xbot::service::Lock lk{&mtx_};
+    return charger_configuration_generation_;
+  }
+
   using PowerManagementCallback = etl::delegate<void()>;
   void SetPowerManagementCallback(PowerManagementCallback callback) {
     power_management_callback_ = callback;
@@ -116,6 +121,7 @@ class PowerService : public PowerServiceBase {
                             XBOT_FUNCTION_FOR_METHOD(PowerService, &PowerService::driver_tick_, this)};
 
   etl::atomic<bool> charger_configured_{false};
+  uint32_t charger_configuration_generation_ = 0;
   float charge_current_ = 0;
   float adapter_volts_ = 0;
   float battery_volts_ = 0;

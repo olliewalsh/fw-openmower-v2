@@ -170,6 +170,9 @@ void PowerService::update_charger_() {
       LogDebugMessage("Disabling temperature sense");
       success &= charger_->setTsEnabled(false);
       charger_configured_ = success;
+      if (charger_configured_) {
+        ++charger_configuration_generation_;
+      }
     }
 
     if (charger_configured_) {
