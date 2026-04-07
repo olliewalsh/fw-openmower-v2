@@ -9,6 +9,12 @@
 
 #include "services.hpp"
 
+namespace {
+#ifdef ROBOT_PLATFORM_Sabo
+constexpr float kSaboMowerTargetErpm = 10500.0f;
+#endif
+}  // namespace
+
 void MowerService::OnCreate() {
   chDbgAssert(mower_driver_ != nullptr, "Mower Motor Driver cannot be null!");
   mower_driver_->SetStateCallback(
@@ -17,27 +23,27 @@ void MowerService::OnCreate() {
 }
 
 bool MowerService::OnStart() {
-  mower_duty_ = 0;
+  mower_command_ = 0;
   return true;
 }
 
 void MowerService::OnStop() {
-  mower_duty_ = 0;
+  mower_command_ = 0;
 }
 
 void MowerService::tick() {
   chMtxLock(&mtx);
 
-  // Check, if we recently received duty. If not, set to zero for safety
+  // Check, if we recently received a mower enable command. If not, set to zero for safety.
   if (xbot::service::system::getTimeMicros() - last_duty_received_micros_ > 10'000'000) {
-    // it's ok to set it here, because we know that duty_set_ is false (we're in a timeout after all)
-    mower_duty_ = 0;
+    // It's ok to set it here, because we know that duty_sent_ is false (we're in a timeout after all).
+    mower_command_ = 0;
   }
 
   if (!duty_sent_) {
-    // Send motor speed to VESC, if we havent in the meantime
+    // Send the latest motor command, if we haven't in the meantime
     // (e.g. due to new value or emergency)
-    SetDuty();
+    ApplyMotorCommand();
   }
 
   mower_driver_->RequestStatus();
@@ -51,7 +57,7 @@ void MowerService::tick() {
   // Check, if we have received ESC status updates recently. If not, send a disconnected message
   if (xbot::service::system::getTimeMicros() - last_valid_esc_state_micros_ > 1'000'000 || !esc_state_valid_) {
     // No recent update received (or none at all)
-    mower_duty_ = 0;
+    mower_command_ = 0;
     SendMowerStatus(static_cast<uint8_t>(MotorDriver::ESCState::ESCStatus::ESC_STATUS_DISCONNECTED));
   } else {
     // We got recent data, send it
@@ -77,14 +83,23 @@ void MowerService::ESCCallback(const MotorDriver::ESCState& state) {
   chMtxUnlock(&state_mutex_);
 }
 
-void MowerService::SetDuty() {
+void MowerService::ApplyMotorCommand() {
   // Get the current emergency state
   bool emergency = emergency_service.GetEmergencyReasons() != 0;
+#ifdef ROBOT_PLATFORM_Sabo
+  const float command = emergency ? 0.0f : mower_command_;
+  if (mower_driver_->SupportsSpeedControl()) {
+    mower_driver_->SetSpeed(command);
+  } else {
+    mower_driver_->SetDuty(0);
+  }
+#else
   if (emergency) {
     mower_driver_->SetDuty(0);
   } else {
-    mower_driver_->SetDuty(mower_duty_);
+    mower_driver_->SetDuty(mower_command_);
   }
+#endif
   duty_sent_ = true;
 }
 
@@ -92,12 +107,17 @@ void MowerService::OnMowerEnabledChanged(const uint8_t& new_value) {
   chMtxLock(&mtx);
   last_duty_received_micros_ = xbot::service::system::getTimeMicros();
   if (new_value) {
-    mower_duty_ = 1.0;
+    mower_command_ =
+#ifdef ROBOT_PLATFORM_Sabo
+        kSaboMowerTargetErpm;
+#else
+        1.0f;
+#endif
   } else {
-    mower_duty_ = 0;
+    mower_command_ = 0;
   }
   if (!duty_sent_) {
-    SetDuty();
+    ApplyMotorCommand();
   }
   chMtxUnlock(&mtx);
 }
@@ -112,8 +132,8 @@ void MowerService::OnEmergencyChangedEvent() {
     return;
   }
   chMtxLock(&mtx);
-  mower_duty_ = 0;
-  // Instantly send the 0 duty cycle
-  SetDuty();
+  mower_command_ = 0;
+  // Instantly send the stop command.
+  ApplyMotorCommand();
   chMtxUnlock(&mtx);
 }

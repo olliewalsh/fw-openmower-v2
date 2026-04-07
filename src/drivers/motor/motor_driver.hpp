@@ -43,6 +43,12 @@ class MotorDriver {
 
   virtual void RequestStatus() = 0;
   virtual void SetDuty(float duty) = 0;
+  virtual bool SupportsSpeedControl() const {
+    return false;
+  }
+  virtual void SetSpeed(float erpm) {
+    (void)erpm;
+  }
 
   virtual bool Start() {
     chDbgAssert(!started_, "Don't start twice");

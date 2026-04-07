@@ -37,7 +37,7 @@ class MowerService : public MowerServiceBase {
   void tick();
   ServiceSchedule tick_schedule_{*this, 500'000, XBOT_FUNCTION_FOR_METHOD(MowerService, &MowerService::tick, this)};
 
-  void SetDuty();
+  void ApplyMotorCommand();
   MUTEX_DECL(mtx);
 
   void ESCCallback(const MotorDriver::ESCState& state);
@@ -52,7 +52,7 @@ class MowerService : public MowerServiceBase {
   uint32_t last_duty_received_micros_ = 0;
   uint32_t last_valid_esc_state_micros_ = 0;
 
-  float mower_duty_ = 0;
+  float mower_command_ = 0;
   bool duty_sent_ = false;
   MotorDriver* mower_driver_ = nullptr;
 };
