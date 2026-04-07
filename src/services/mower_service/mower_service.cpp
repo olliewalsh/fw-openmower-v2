@@ -9,6 +9,12 @@
 
 #include "services.hpp"
 
+namespace {
+#ifdef ROBOT_PLATFORM_Sabo
+constexpr float kSaboMowerTargetErpm = 10500.0f;
+#endif
+}  // namespace
+
 void MowerService::OnCreate() {
   chDbgAssert(mower_driver_ != nullptr, "Mower Motor Driver cannot be null!");
   mower_driver_->SetStateCallback(
@@ -36,7 +42,7 @@ void MowerService::OnStop() {
 void MowerService::tick() {
   chMtxLock(&mtx);
 
-  // Check, if we recently received duty. If not, set to zero for safety
+  // Check, if we recently received a mower enable command. If not, set to zero for safety.
   if (xbot::service::system::getTimeMicros() - last_duty_received_micros_ > 10'000'000) {
     // it's ok to set it here, because we know that duty_set_ is false (we're in a timeout after all)
     mower_duty_ = 0;
@@ -61,7 +67,7 @@ void MowerService::tick() {
     }
   }
 
-  SetDuty();
+  ApplyMotorCommand();
 
   mower_driver_->RequestStatus();
 
@@ -115,12 +121,20 @@ void MowerService::ESCCallback(const MotorDriver::ESCState& state) {
   chMtxUnlock(&state_mutex_);
 }
 
-void MowerService::SetDuty() {
+void MowerService::ApplyMotorCommand() {
   // Get the current emergency state
   bool emergency = emergency_service.GetEmergencyReasons() != 0;
   float duty_to_send = emergency ? 0.0f : mower_duty_;
 
+#ifdef ROBOT_PLATFORM_Sabo
+  if (mower_driver_->SupportsSpeedControl()) {
+    mower_driver_->SetSpeed(duty_to_send * kSaboMowerTargetErpm);
+  } else {
+    mower_driver_->SetDuty(0);
+  }
+#else
   mower_driver_->SetDuty(duty_to_send);
+#endif
 }
 
 void MowerService::OnMowerSpeedChanged(const float& new_value) {
@@ -158,7 +172,7 @@ void MowerService::OnMowerSpeedChanged(const float& new_value) {
   }
 
   if (!ramping_) {
-    SetDuty();
+    ApplyMotorCommand();
   }
   chMtxUnlock(&mtx);
 }
@@ -177,6 +191,6 @@ void MowerService::OnEmergencyChangedEvent() {
   mower_duty_target_ = 0;
   ramping_ = false;
   // Instantly send the 0 duty cycle
-  SetDuty();
+  ApplyMotorCommand();
   chMtxUnlock(&mtx);
 }

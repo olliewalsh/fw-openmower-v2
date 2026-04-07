@@ -25,6 +25,10 @@ class VescDriver : public DebuggableDriver, public MotorDriver {
   void RequestStatus() override;
   void RequestMcConfTemp();
   void SetDuty(float duty) override;
+  bool SupportsSpeedControl() const override {
+    return true;
+  }
+  void SetSpeed(float erpm) override;
 
   void RawDataInput(uint8_t *data, size_t size) override;
 
