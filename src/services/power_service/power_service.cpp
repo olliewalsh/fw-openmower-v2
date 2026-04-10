@@ -119,9 +119,6 @@ void PowerService::charger_tick() {
       // Disable temperature sense, the battery doesnt have it
       success &= charger_->setTsEnabled(false);
       charger_configured_ = success;
-      if (charger_configured_) {
-        ++charger_configuration_generation_;
-      }
     }
 
     if (charger_configured_) {
