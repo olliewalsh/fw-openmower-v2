@@ -149,16 +149,8 @@ void SaboRobot::RegisterAdc1Sensors() {
 }
 
 void SaboRobot::OnPowerManagement() {
-  constexpr float HYSTERESIS = 0.05f;          // 50mA
   constexpr float SAFETY_RESERVE = 0.2f;       // 200mA (~100mA blind current into ESCs + 100mA ADC inaccuracy)
   constexpr float MIN_ADAPTER_CURRENT = 0.3f;  // 300mA
-
-  const uint32_t charger_configuration_generation = power_service.GetChargerConfigurationGeneration();
-  if (charger_configuration_generation != last_charger_configuration_generation) {
-    last_charger_configuration_generation = charger_configuration_generation;
-    last_adapter_limit = std::numeric_limits<float>::quiet_NaN();
-    last_charge_limit = std::numeric_limits<float>::quiet_NaN();
-  }
 
   float system_current = power_service.GetConfiguredSystemCurrent();
   if (isnan(system_current) || system_current <= 0.0f) return;
@@ -170,10 +162,7 @@ void SaboRobot::OnPowerManagement() {
   float adapter_limit = std::max(MIN_ADAPTER_CURRENT, system_current - dcdc_current - SAFETY_RESERVE);
   adapter_limit =
       std::min(adapter_limit, hardware_config.limits->max_adapter_current);  // Clamp to <= adapter current limit
-  if (isnan(last_adapter_limit) || fabsf(adapter_limit - last_adapter_limit) > HYSTERESIS) {
-    charger_.setAdapterCurrent(adapter_limit);
-    last_adapter_limit = adapter_limit;
-  }
+  charger_.setAdapterCurrent(adapter_limit);
 
   // Ensure charge current is within Sabo's design limits before disabling ICHG pin
   float config_charge_current = power_service.GetConfiguredChargeCurrent();
@@ -182,8 +171,5 @@ void SaboRobot::OnPowerManagement() {
                            : Power_GetDefaultChargeCurrent();  // Sabo default
   charge_limit =
       std::min(hardware_config.limits->max_charge_current, charge_limit);  // Clamp to <= charge current limit
-  if (isnan(last_charge_limit) || last_charge_limit != charge_limit) {
-    charger_.setChargingCurrent(charge_limit, true);
-    last_charge_limit = charge_limit;
-  }
+  charger_.setChargingCurrent(charge_limit, true);
 }
