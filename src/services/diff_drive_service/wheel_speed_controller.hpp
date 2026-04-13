@@ -20,6 +20,10 @@ class WheelSpeedController {
     gains_ = gains;
   }
 
+  void SetMaxDuty(float max_duty) {
+    max_duty_ = max_duty;
+  }
+
   void Reset() {
     target_speed_ = 0;
     measured_speed_ = 0;
@@ -45,13 +49,13 @@ class WheelSpeedController {
     float unsaturated = gains_.feedforward * target_speed_ + gains_.kp * error + gains_.ki * next_integral;
 
     // Only integrate while unsaturated, or when the error drives the controller back out of saturation.
-    if ((unsaturated <= 1.0f && unsaturated >= -1.0f) || (unsaturated > 1.0f && error < 0.0f) ||
-        (unsaturated < -1.0f && error > 0.0f)) {
+    if ((unsaturated <= max_duty_ && unsaturated >= -max_duty_) || (unsaturated > max_duty_ && error < 0.0f) ||
+        (unsaturated < -max_duty_ && error > 0.0f)) {
       integral_ = next_integral;
       unsaturated = gains_.feedforward * target_speed_ + gains_.kp * error + gains_.ki * integral_;
     }
 
-    duty_ = ClampUnit(unsaturated);
+    duty_ = Clamp(unsaturated);
     return duty_;
   }
 
@@ -68,17 +72,18 @@ class WheelSpeedController {
   }
 
  private:
-  static float ClampUnit(float value) {
-    if (value >= 1.0f) {
-      return 1.0f;
+  float Clamp(float value) const {
+    if (value >= max_duty_) {
+      return max_duty_;
     }
-    if (value <= -1.0f) {
-      return -1.0f;
+    if (value <= -max_duty_) {
+      return -max_duty_;
     }
     return value;
   }
 
   Gains gains_;
+  float max_duty_ = 0.95f;
   float target_speed_ = 0;
   float measured_speed_ = 0;
   float integral_ = 0;
