@@ -11,6 +11,7 @@ class WheelSpeedController {
     float feedforward = 1.5f;
     float kp = 0.35f;
     float ki = 1.5f;
+    float kd = 0.0f;
   };
 
   explicit WheelSpeedController(Gains gains) : gains_(gains) {
@@ -28,6 +29,7 @@ class WheelSpeedController {
     target_speed_ = 0;
     measured_speed_ = 0;
     integral_ = 0;
+    prev_error_ = 0;
     duty_ = 0;
   }
 
@@ -46,13 +48,21 @@ class WheelSpeedController {
       next_integral += error * dt;
     }
 
-    float unsaturated = gains_.feedforward * target_speed_ + gains_.kp * error + gains_.ki * next_integral;
+    float derivative = 0.0f;
+    if (dt > 0.0f) {
+      derivative = (error - prev_error_) / dt;
+    }
+    prev_error_ = error;
+
+    float unsaturated =
+        gains_.feedforward * target_speed_ + gains_.kp * error + gains_.ki * next_integral + gains_.kd * derivative;
 
     // Only integrate while unsaturated, or when the error drives the controller back out of saturation.
     if ((unsaturated <= max_duty_ && unsaturated >= -max_duty_) || (unsaturated > max_duty_ && error < 0.0f) ||
         (unsaturated < -max_duty_ && error > 0.0f)) {
       integral_ = next_integral;
-      unsaturated = gains_.feedforward * target_speed_ + gains_.kp * error + gains_.ki * integral_;
+      unsaturated =
+          gains_.feedforward * target_speed_ + gains_.kp * error + gains_.ki * integral_ + gains_.kd * derivative;
     }
 
     duty_ = Clamp(unsaturated);
@@ -87,6 +97,7 @@ class WheelSpeedController {
   float target_speed_ = 0;
   float measured_speed_ = 0;
   float integral_ = 0;
+  float prev_error_ = 0;
   float duty_ = 0;
 };
 

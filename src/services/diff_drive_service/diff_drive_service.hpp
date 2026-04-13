@@ -41,7 +41,7 @@ class DiffDriveService : public DiffDriveServiceBase {
   float desired_speed_l_ = 0;
   float desired_speed_r_ = 0;
 
-  static constexpr WheelSpeedController::Gains kDefaultWheelSpeedControllerGains{1.5f, 0.35f, 1.5f};
+  static constexpr WheelSpeedController::Gains kDefaultWheelSpeedControllerGains{1.2f, 0.35f, 0.8f, 0.05f};
   WheelSpeedController left_wheel_controller_{kDefaultWheelSpeedControllerGains};
   WheelSpeedController right_wheel_controller_{kDefaultWheelSpeedControllerGains};
   bool duty_sent_ = false;

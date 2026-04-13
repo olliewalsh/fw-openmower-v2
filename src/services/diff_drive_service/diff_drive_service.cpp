@@ -18,6 +18,7 @@ WheelSpeedController::Gains DiffDriveService::GetConfiguredWheelSpeedControllerG
       static_cast<float>(WheelSpeedFeedforward.value),
       static_cast<float>(WheelSpeedKp.value),
       static_cast<float>(WheelSpeedKi.value),
+      static_cast<float>(WheelSpeedKd.value),
   };
 
   if (gains.feedforward <= 0.0f) {
@@ -28,6 +29,9 @@ WheelSpeedController::Gains DiffDriveService::GetConfiguredWheelSpeedControllerG
   }
   if (gains.ki < 0.0f) {
     gains.ki = kDefaultWheelSpeedControllerGains.ki;
+  }
+  if (gains.kd < 0.0f) {
+    gains.kd = kDefaultWheelSpeedControllerGains.kd;
   }
 
   return gains;
