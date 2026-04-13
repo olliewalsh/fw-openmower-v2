@@ -40,7 +40,7 @@ class MowerService : public MowerServiceBase {
 
  private:
   void tick();
-  ServiceSchedule tick_schedule_{*this, 500'000, XBOT_FUNCTION_FOR_METHOD(MowerService, &MowerService::tick, this)};
+  ServiceSchedule tick_schedule_{*this, 20'000, XBOT_FUNCTION_FOR_METHOD(MowerService, &MowerService::tick, this)};
 
   void ApplyMotorCommand();
   MUTEX_DECL(mtx);
