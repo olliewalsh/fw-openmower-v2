@@ -33,28 +33,39 @@ WheelSpeedController::Gains DiffDriveService::GetConfiguredWheelSpeedControllerG
   return gains;
 }
 
+float DiffDriveService::GetMaxDuty() const {
+  const auto val = static_cast<float>(MaxDuty.value);
+  if (val > 0.0f && val <= 1.0f) {
+    return val;
+  }
+  return 0.95f;
+}
+
 float DiffDriveService::GetNominalWheelSpeedLimit() const {
   const auto gains = GetConfiguredWheelSpeedControllerGains();
-  return 1.0f / gains.feedforward;
+  return GetMaxDuty() / gains.feedforward;
 }
 
 void DiffDriveService::UpdateControllerGains() {
   const auto gains = GetConfiguredWheelSpeedControllerGains();
   left_wheel_controller_.SetGains(gains);
   right_wheel_controller_.SetGains(gains);
+  const float max_duty = GetMaxDuty();
+  left_wheel_controller_.SetMaxDuty(max_duty);
+  right_wheel_controller_.SetMaxDuty(max_duty);
 }
 
 void DiffDriveService::UpdateDutyFromMeasuredSpeeds(float dt) {
   UpdateControllerGains();
-  const float scale = wheel_speed_limit_estimator_.ScaleForTargets(desired_speed_l_, desired_speed_r_);
+  const float nominal_limit = GetNominalWheelSpeedLimit();
+  const float abs_l = std::fabs(desired_speed_l_);
+  const float abs_r = std::fabs(desired_speed_r_);
+  const float peak = abs_l > abs_r ? abs_l : abs_r;
+  const float scale = (nominal_limit > 0.0f && peak > nominal_limit) ? nominal_limit / peak : 1.0f;
   left_wheel_controller_.SetTargetSpeed(desired_speed_l_ * scale);
   right_wheel_controller_.SetTargetSpeed(desired_speed_r_ * scale);
   left_wheel_controller_.Update(dt);
   right_wheel_controller_.Update(dt);
-  wheel_speed_limit_estimator_.Update(dt, GetNominalWheelSpeedLimit(), left_wheel_controller_.target_speed(),
-                                      right_wheel_controller_.target_speed(), left_wheel_controller_.measured_speed(),
-                                      right_wheel_controller_.measured_speed(), left_wheel_controller_.duty(),
-                                      right_wheel_controller_.duty());
 }
 
 void DiffDriveService::OnEmergencyChangedEvent() {
@@ -66,7 +77,6 @@ void DiffDriveService::OnEmergencyChangedEvent() {
   chMtxLock(&state_mutex_);
   desired_speed_l_ = 0;
   desired_speed_r_ = 0;
-  wheel_speed_limit_estimator_.Reset(GetNominalWheelSpeedLimit());
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   // Instantly send the 0 duty cycle
@@ -93,7 +103,6 @@ bool DiffDriveService::OnStart() {
   UpdateControllerGains();
   desired_speed_l_ = 0;
   desired_speed_r_ = 0;
-  wheel_speed_limit_estimator_.Reset(GetNominalWheelSpeedLimit());
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
@@ -119,7 +128,6 @@ void DiffDriveService::OnCreate() {
 void DiffDriveService::OnStop() {
   desired_speed_l_ = 0;
   desired_speed_r_ = 0;
-  wheel_speed_limit_estimator_.Reset(GetNominalWheelSpeedLimit());
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
@@ -133,7 +141,6 @@ void DiffDriveService::tick() {
     // it's ok to set it here, because we know that duty_set_ is false (we're in a timeout after all)
     desired_speed_l_ = 0;
     desired_speed_r_ = 0;
-    wheel_speed_limit_estimator_.Reset(GetNominalWheelSpeedLimit());
     left_wheel_controller_.Reset();
     right_wheel_controller_.Reset();
   }
@@ -168,9 +175,22 @@ void DiffDriveService::SetDuty() {
     left_esc_driver_->SetDuty(0);
     right_esc_driver_->SetDuty(0);
   } else {
-    left_esc_driver_->SetDuty(left_wheel_controller_.duty());
+    float left_duty = left_wheel_controller_.duty();
     // The right motor is installed with opposite polarity.
-    right_esc_driver_->SetDuty(-right_wheel_controller_.duty());
+    float right_duty = -right_wheel_controller_.duty();
+    // Scale both duties proportionally if either exceeds the limit,
+    // preserving the left/right ratio so the turn radius is maintained.
+    const float max_duty = GetMaxDuty();
+    const float abs_l = std::fabs(left_duty);
+    const float abs_r = std::fabs(right_duty);
+    const float peak = abs_l > abs_r ? abs_l : abs_r;
+    if (peak > max_duty) {
+      const float scale = max_duty / peak;
+      left_duty *= scale;
+      right_duty *= scale;
+    }
+    left_esc_driver_->SetDuty(left_duty);
+    right_esc_driver_->SetDuty(right_duty);
   }
   duty_sent_ = true;
 }
