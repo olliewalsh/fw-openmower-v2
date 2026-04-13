@@ -233,23 +233,25 @@ void DiffDriveService::ProcessStatusUpdate() {
   // Calculate the twist according to wheel ticks
   if (last_ticks_valid) {
     float dt = static_cast<float>(micros - last_ticks_micros_) / 1'000'000.0f;
-    int32_t d_left = static_cast<int32_t>(left_esc_state_.tacho - last_ticks_left);
-    int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
     const float wheel_ticks_per_meter = static_cast<float>(WheelTicksPerMeter.value);
     const float wheel_distance = static_cast<float>(WheelDistance.value);
-    left_wheel_controller_.SetMeasuredSpeed(static_cast<float>(d_left) / (dt * wheel_ticks_per_meter));
-    right_wheel_controller_.SetMeasuredSpeed(-static_cast<float>(d_right) / (dt * wheel_ticks_per_meter));
-    float vx = 0.5f * (left_wheel_controller_.measured_speed() + right_wheel_controller_.measured_speed());
-    float vr = (right_wheel_controller_.measured_speed() - left_wheel_controller_.measured_speed()) / wheel_distance;
-    UpdateDutyFromMeasuredSpeeds(dt);
-    double data[6]{};
-    data[0] = vx;
-    data[5] = vr;
-    SendActualTwist(data, 6);
-    uint32_t ticks[2];
-    ticks[0] = left_esc_state_.tacho;
-    ticks[1] = right_esc_state_.tacho;
-    SendWheelTicks(ticks, 2);
+    if (dt > 0.0f && wheel_ticks_per_meter > 0.0f && wheel_distance > 0.0f) {
+      int32_t d_left = static_cast<int32_t>(left_esc_state_.tacho - last_ticks_left);
+      int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
+      left_wheel_controller_.SetMeasuredSpeed(static_cast<float>(d_left) / (dt * wheel_ticks_per_meter));
+      right_wheel_controller_.SetMeasuredSpeed(-static_cast<float>(d_right) / (dt * wheel_ticks_per_meter));
+      float vx = 0.5f * (left_wheel_controller_.measured_speed() + right_wheel_controller_.measured_speed());
+      float vr = (right_wheel_controller_.measured_speed() - left_wheel_controller_.measured_speed()) / wheel_distance;
+      UpdateDutyFromMeasuredSpeeds(dt);
+      double data[6]{};
+      data[0] = vx;
+      data[5] = vr;
+      SendActualTwist(data, 6);
+      uint32_t ticks[2];
+      ticks[0] = left_esc_state_.tacho;
+      ticks[1] = right_esc_state_.tacho;
+      SendWheelTicks(ticks, 2);
+    }
   }
   last_ticks_valid = true;
   last_ticks_left = left_esc_state_.tacho;
