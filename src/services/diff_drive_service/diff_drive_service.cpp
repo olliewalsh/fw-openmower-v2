@@ -106,6 +106,10 @@ bool DiffDriveService::OnStart() {
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
+
+  // Kick off the request-response cycle
+  left_esc_driver_->RequestStatus();
+  right_esc_driver_->RequestStatus();
   return true;
 }
 
@@ -150,10 +154,8 @@ void DiffDriveService::tick() {
     SetDuty();
   }
 
-  left_esc_driver_->RequestStatus();
-  right_esc_driver_->RequestStatus();
-
   // Check, if we have received ESC status updates recently. If not, send a disconnected message
+  // and request status to kick off the request-response cycle.
   if (xbot::service::system::getTimeMicros() - last_valid_esc_state_micros_ > 1'000'000) {
     StartTransaction();
     if (!left_esc_state_valid_) {
@@ -163,6 +165,8 @@ void DiffDriveService::tick() {
       SendRightESCStatus(static_cast<uint8_t>(MotorDriver::ESCState::ESCStatus::ESC_STATUS_DISCONNECTED));
     }
     CommitTransaction();
+    left_esc_driver_->RequestStatus();
+    right_esc_driver_->RequestStatus();
   }
 
   duty_sent_ = false;
@@ -197,25 +201,37 @@ void DiffDriveService::SetDuty() {
 }
 
 void DiffDriveService::LeftESCCallback(const MotorDriver::ESCState& state) {
+  bool request_next = false;
   chMtxLock(&state_mutex_);
   left_esc_state_ = state;
   left_esc_state_valid_ = true;
   escs_connected_ |= ESC_LEFT;
   if (right_esc_state_valid_) {
     ProcessStatusUpdate();
+    request_next = true;
   }
   chMtxUnlock(&state_mutex_);
+  if (request_next) {
+    left_esc_driver_->RequestStatus();
+    right_esc_driver_->RequestStatus();
+  }
 }
 
 void DiffDriveService::RightESCCallback(const MotorDriver::ESCState& state) {
+  bool request_next = false;
   chMtxLock(&state_mutex_);
   right_esc_state_ = state;
   right_esc_state_valid_ = true;
   escs_connected_ |= ESC_RIGHT;
   if (left_esc_state_valid_) {
     ProcessStatusUpdate();
+    request_next = true;
   }
   chMtxUnlock(&state_mutex_);
+  if (request_next) {
+    left_esc_driver_->RequestStatus();
+    right_esc_driver_->RequestStatus();
+  }
 }
 
 void DiffDriveService::ProcessStatusUpdate() {
