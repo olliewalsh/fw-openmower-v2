@@ -18,6 +18,9 @@ void MowerService::OnCreate() {
 
 bool MowerService::OnStart() {
   mower_duty_ = 0;
+
+  // Kick off the request-response cycle
+  mower_driver_->RequestStatus();
   return true;
 }
 
@@ -40,8 +43,6 @@ void MowerService::tick() {
     SetDuty();
   }
 
-  mower_driver_->RequestStatus();
-
   // TODO: actually detect some rain
   bool rain_detected = false;
 
@@ -49,19 +50,12 @@ void MowerService::tick() {
   SendRainDetected(rain_detected);
 
   // Check, if we have received ESC status updates recently. If not, send a disconnected message
+  // and request status to kick off the request-response cycle.
   if (xbot::service::system::getTimeMicros() - last_valid_esc_state_micros_ > 1'000'000 || !esc_state_valid_) {
     // No recent update received (or none at all)
     mower_duty_ = 0;
     SendMowerStatus(static_cast<uint8_t>(MotorDriver::ESCState::ESCStatus::ESC_STATUS_DISCONNECTED));
-  } else {
-    // We got recent data, send it
-    StartTransaction();
-    SendMowerESCTemperature(esc_state_.temperature_pcb);
-    SendMowerMotorCurrent(esc_state_.current_input);
-    SendMowerStatus(static_cast<uint8_t>(esc_state_.status));
-    SendMowerMotorTemperature(esc_state_.temperature_motor);
-    SendMowerRunning(std::fabs(esc_state_.rpm) > 0);
-    SendMowerMotorRPM(esc_state_.rpm);
+    mower_driver_->RequestStatus();
   }
   CommitTransaction();
 
@@ -74,7 +68,19 @@ void MowerService::ESCCallback(const MotorDriver::ESCState& state) {
   esc_state_ = state;
   esc_state_valid_ = true;
   last_valid_esc_state_micros_ = xbot::service::system::getTimeMicros();
+
+  StartTransaction();
+  SendMowerESCTemperature(esc_state_.temperature_pcb);
+  SendMowerMotorCurrent(esc_state_.current_input);
+  SendMowerStatus(static_cast<uint8_t>(esc_state_.status));
+  SendMowerMotorTemperature(esc_state_.temperature_motor);
+  SendMowerRunning(std::fabs(esc_state_.rpm) > 0);
+  SendMowerMotorRPM(esc_state_.rpm);
+  CommitTransaction();
+
   chMtxUnlock(&state_mutex_);
+
+  mower_driver_->RequestStatus();
 }
 
 void MowerService::SetDuty() {
