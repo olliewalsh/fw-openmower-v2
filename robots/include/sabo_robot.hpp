@@ -58,9 +58,9 @@ class SaboRobot : public MowerRobot {
 
   float Power_GetAbsoluteMinVoltage() override {
     // Stock Sabo battery pack has INR18650-13L (Samsung) which are specified as:
-    // Empty = 3.0V, Critical discharge <=2.5V. For now, let's stay save,
-    // because most packages are > 10 years old now and cells may be a bit worn out.
-    return 7.0f * 3.45f;  // 24.15V
+    // Empty = 3.0V, Critical discharge <=2.5V. Keep the hard shutdown below the
+    // configured 20.5V critical-docking threshold, but above the 17.5V cell limit.
+    return 20.0f;
   }
 
   float Power_GetDefaultChargeCurrent() override {
