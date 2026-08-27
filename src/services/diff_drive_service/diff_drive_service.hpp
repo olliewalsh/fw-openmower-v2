@@ -38,6 +38,15 @@ class DiffDriveService : public DiffDriveServiceBase {
   uint32_t last_ticks_right = 0;
   bool last_ticks_valid = false;
   uint32_t last_ticks_micros_ = 0;
+  static constexpr uint8_t kSpeedWindowSamples = 3;
+  int32_t speed_window_left_ticks_[kSpeedWindowSamples]{};
+  int32_t speed_window_right_ticks_[kSpeedWindowSamples]{};
+  float speed_window_dt_[kSpeedWindowSamples]{};
+  int32_t speed_window_left_sum_ = 0;
+  int32_t speed_window_right_sum_ = 0;
+  float speed_window_dt_sum_ = 0.0f;
+  uint8_t speed_window_index_ = 0;
+  uint8_t speed_window_count_ = 0;
   float desired_speed_l_ = 0;
   float desired_speed_r_ = 0;
 

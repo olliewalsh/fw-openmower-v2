@@ -110,6 +110,11 @@ bool DiffDriveService::OnStart() {
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
+  speed_window_left_sum_ = 0;
+  speed_window_right_sum_ = 0;
+  speed_window_dt_sum_ = 0.0f;
+  speed_window_index_ = 0;
+  speed_window_count_ = 0;
 
   // Kick off the request-response cycle
   left_esc_driver_->RequestStatus();
@@ -139,6 +144,11 @@ void DiffDriveService::OnStop() {
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
+  speed_window_left_sum_ = 0;
+  speed_window_right_sum_ = 0;
+  speed_window_dt_sum_ = 0.0f;
+  speed_window_index_ = 0;
+  speed_window_count_ = 0;
   escs_connected_ = 0;
 }
 
@@ -258,8 +268,27 @@ void DiffDriveService::ProcessStatusUpdate() {
     if (dt > 0.0f && wheel_ticks_per_meter > 0.0f && wheel_distance > 0.0f) {
       int32_t d_left = static_cast<int32_t>(left_esc_state_.tacho - last_ticks_left);
       int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
-      left_wheel_controller_.SetMeasuredSpeed(static_cast<float>(d_left) / (dt * wheel_ticks_per_meter));
-      right_wheel_controller_.SetMeasuredSpeed(-static_cast<float>(d_right) / (dt * wheel_ticks_per_meter));
+
+      if (speed_window_count_ == kSpeedWindowSamples) {
+        speed_window_left_sum_ -= speed_window_left_ticks_[speed_window_index_];
+        speed_window_right_sum_ -= speed_window_right_ticks_[speed_window_index_];
+        speed_window_dt_sum_ -= speed_window_dt_[speed_window_index_];
+      } else {
+        speed_window_count_++;
+      }
+
+      speed_window_left_ticks_[speed_window_index_] = d_left;
+      speed_window_right_ticks_[speed_window_index_] = d_right;
+      speed_window_dt_[speed_window_index_] = dt;
+      speed_window_left_sum_ += d_left;
+      speed_window_right_sum_ += d_right;
+      speed_window_dt_sum_ += dt;
+      speed_window_index_ = (speed_window_index_ + 1) % kSpeedWindowSamples;
+
+      left_wheel_controller_.SetMeasuredSpeed(static_cast<float>(speed_window_left_sum_) /
+                                              (speed_window_dt_sum_ * wheel_ticks_per_meter));
+      right_wheel_controller_.SetMeasuredSpeed(-static_cast<float>(speed_window_right_sum_) /
+                                               (speed_window_dt_sum_ * wheel_ticks_per_meter));
       float vx = 0.5f * (left_wheel_controller_.measured_speed() + right_wheel_controller_.measured_speed());
       float vr = (right_wheel_controller_.measured_speed() - left_wheel_controller_.measured_speed()) / wheel_distance;
       UpdateDutyFromMeasuredSpeeds(dt);
