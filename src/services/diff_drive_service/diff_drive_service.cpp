@@ -13,8 +13,6 @@
 
 using namespace xbot::driver::motor;
 
-constexpr float kDriveModeEpsilon = 1e-4f;
-
 WheelSpeedController::Gains DiffDriveService::GetConfiguredWheelSpeedControllerGains() const {
   WheelSpeedController::Gains gains{
       static_cast<float>(WheelSpeedFeedforward.value),
@@ -61,12 +59,9 @@ void DiffDriveService::UpdateControllerGains() {
   right_wheel_controller_.SetMaxDuty(max_duty);
 }
 
-void DiffDriveService::ResetSpeedMeasurementWindow() {
-  speed_window_left_sum_ = 0;
-  speed_window_right_sum_ = 0;
-  speed_window_dt_sum_ = 0.0f;
-  speed_window_index_ = 0;
-  speed_window_count_ = 0;
+void DiffDriveService::ResetSpeedObservers() {
+  left_speed_observer_.Reset();
+  right_speed_observer_.Reset();
 }
 
 void DiffDriveService::UpdateDutyFromMeasuredSpeeds(float dt) {
@@ -120,8 +115,7 @@ bool DiffDriveService::OnStart() {
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
-  pure_rotation_commanded_ = false;
-  ResetSpeedMeasurementWindow();
+  ResetSpeedObservers();
 
   // Kick off the request-response cycle
   left_esc_driver_->RequestStatus();
@@ -151,8 +145,7 @@ void DiffDriveService::OnStop() {
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
-  pure_rotation_commanded_ = false;
-  ResetSpeedMeasurementWindow();
+  ResetSpeedObservers();
   escs_connected_ = 0;
 }
 
@@ -166,7 +159,6 @@ void DiffDriveService::tick() {
     desired_speed_r_ = 0;
     left_wheel_controller_.Reset();
     right_wheel_controller_.Reset();
-    pure_rotation_commanded_ = false;
   }
 
   if (!duty_sent_) {
@@ -176,6 +168,8 @@ void DiffDriveService::tick() {
   // Check, if we have received ESC status updates recently. If not, send a disconnected message
   // and request status to kick off the request-response cycle.
   if (xbot::service::system::getTimeMicros() - last_valid_esc_state_micros_ > 1'000'000) {
+    last_ticks_valid = false;
+    ResetSpeedObservers();
     StartTransaction();
     if (!left_esc_state_valid_) {
       SendLeftESCStatus(static_cast<uint8_t>(MotorDriver::ESCState::ESCStatus::ESC_STATUS_DISCONNECTED));
@@ -273,38 +267,30 @@ void DiffDriveService::ProcessStatusUpdate() {
     if (dt > 0.0f && wheel_ticks_per_meter > 0.0f && wheel_distance > 0.0f) {
       int32_t d_left = static_cast<int32_t>(left_esc_state_.tacho - last_ticks_left);
       int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
-
-      if (speed_window_count_ == kSpeedWindowSamples) {
-        speed_window_left_sum_ -= speed_window_left_ticks_[speed_window_index_];
-        speed_window_right_sum_ -= speed_window_right_ticks_[speed_window_index_];
-        speed_window_dt_sum_ -= speed_window_dt_[speed_window_index_];
+      const float position_resolution = 1.0f / wheel_ticks_per_meter;
+      const bool left_valid = left_speed_observer_.Update(d_left * position_resolution, dt, position_resolution);
+      const bool right_valid =
+          right_speed_observer_.Update(-static_cast<float>(d_right) * position_resolution, dt, position_resolution);
+      if (!left_valid || !right_valid) {
+        ResetSpeedObservers();
       } else {
-        speed_window_count_++;
+        left_wheel_controller_.SetMeasuredSpeed(left_speed_observer_.velocity());
+        right_wheel_controller_.SetMeasuredSpeed(right_speed_observer_.velocity());
+        float vx = 0.5f * (left_wheel_controller_.measured_speed() + right_wheel_controller_.measured_speed());
+        float vr =
+            (right_wheel_controller_.measured_speed() - left_wheel_controller_.measured_speed()) / wheel_distance;
+        UpdateDutyFromMeasuredSpeeds(dt);
+        double data[6]{};
+        data[0] = vx;
+        data[5] = vr;
+        SendActualTwist(data, 6);
+        uint32_t ticks[2];
+        ticks[0] = left_esc_state_.tacho;
+        ticks[1] = right_esc_state_.tacho;
+        SendWheelTicks(ticks, 2);
       }
-
-      speed_window_left_ticks_[speed_window_index_] = d_left;
-      speed_window_right_ticks_[speed_window_index_] = d_right;
-      speed_window_dt_[speed_window_index_] = dt;
-      speed_window_left_sum_ += d_left;
-      speed_window_right_sum_ += d_right;
-      speed_window_dt_sum_ += dt;
-      speed_window_index_ = (speed_window_index_ + 1) % kSpeedWindowSamples;
-
-      left_wheel_controller_.SetMeasuredSpeed(static_cast<float>(speed_window_left_sum_) /
-                                              (speed_window_dt_sum_ * wheel_ticks_per_meter));
-      right_wheel_controller_.SetMeasuredSpeed(-static_cast<float>(speed_window_right_sum_) /
-                                               (speed_window_dt_sum_ * wheel_ticks_per_meter));
-      float vx = 0.5f * (left_wheel_controller_.measured_speed() + right_wheel_controller_.measured_speed());
-      float vr = (right_wheel_controller_.measured_speed() - left_wheel_controller_.measured_speed()) / wheel_distance;
-      UpdateDutyFromMeasuredSpeeds(dt);
-      double data[6]{};
-      data[0] = vx;
-      data[5] = vr;
-      SendActualTwist(data, 6);
-      uint32_t ticks[2];
-      ticks[0] = left_esc_state_.tacho;
-      ticks[1] = right_esc_state_.tacho;
-      SendWheelTicks(ticks, 2);
+    } else {
+      ResetSpeedObservers();
     }
   }
   last_ticks_valid = true;
@@ -324,12 +310,6 @@ void DiffDriveService::OnControlTwistChanged(const double* new_value, uint32_t l
   // we can only do forward and rotation around one axis
   const auto linear = static_cast<float>(new_value[0]);
   const auto angular = static_cast<float>(new_value[5]);
-  const bool pure_rotation = std::fabs(linear) < kDriveModeEpsilon && std::fabs(angular) >= kDriveModeEpsilon;
-  // Do not mix samples from the preceding translation/arc into a pure rotation, or vice versa.
-  if (pure_rotation != pure_rotation_commanded_) {
-    ResetSpeedMeasurementWindow();
-  }
-  pure_rotation_commanded_ = pure_rotation;
 
   desired_speed_r_ = linear + 0.5f * static_cast<float>(WheelDistance.value) * angular;
   desired_speed_l_ = linear - 0.5f * static_cast<float>(WheelDistance.value) * angular;
