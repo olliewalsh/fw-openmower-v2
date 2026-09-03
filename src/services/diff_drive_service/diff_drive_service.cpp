@@ -13,6 +13,8 @@
 
 using namespace xbot::driver::motor;
 
+constexpr float kDriveModeEpsilon = 1e-4f;
+
 WheelSpeedController::Gains DiffDriveService::GetConfiguredWheelSpeedControllerGains() const {
   WheelSpeedController::Gains gains{
       static_cast<float>(WheelSpeedFeedforward.value),
@@ -57,6 +59,14 @@ void DiffDriveService::UpdateControllerGains() {
   const float max_duty = GetMaxDuty();
   left_wheel_controller_.SetMaxDuty(max_duty);
   right_wheel_controller_.SetMaxDuty(max_duty);
+}
+
+void DiffDriveService::ResetSpeedMeasurementWindow() {
+  speed_window_left_sum_ = 0;
+  speed_window_right_sum_ = 0;
+  speed_window_dt_sum_ = 0.0f;
+  speed_window_index_ = 0;
+  speed_window_count_ = 0;
 }
 
 void DiffDriveService::UpdateDutyFromMeasuredSpeeds(float dt) {
@@ -110,11 +120,8 @@ bool DiffDriveService::OnStart() {
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
-  speed_window_left_sum_ = 0;
-  speed_window_right_sum_ = 0;
-  speed_window_dt_sum_ = 0.0f;
-  speed_window_index_ = 0;
-  speed_window_count_ = 0;
+  pure_rotation_commanded_ = false;
+  ResetSpeedMeasurementWindow();
 
   // Kick off the request-response cycle
   left_esc_driver_->RequestStatus();
@@ -144,11 +151,8 @@ void DiffDriveService::OnStop() {
   left_wheel_controller_.Reset();
   right_wheel_controller_.Reset();
   last_ticks_valid = false;
-  speed_window_left_sum_ = 0;
-  speed_window_right_sum_ = 0;
-  speed_window_dt_sum_ = 0.0f;
-  speed_window_index_ = 0;
-  speed_window_count_ = 0;
+  pure_rotation_commanded_ = false;
+  ResetSpeedMeasurementWindow();
   escs_connected_ = 0;
 }
 
@@ -162,6 +166,7 @@ void DiffDriveService::tick() {
     desired_speed_r_ = 0;
     left_wheel_controller_.Reset();
     right_wheel_controller_.Reset();
+    pure_rotation_commanded_ = false;
   }
 
   if (!duty_sent_) {
@@ -319,6 +324,12 @@ void DiffDriveService::OnControlTwistChanged(const double* new_value, uint32_t l
   // we can only do forward and rotation around one axis
   const auto linear = static_cast<float>(new_value[0]);
   const auto angular = static_cast<float>(new_value[5]);
+  const bool pure_rotation = std::fabs(linear) < kDriveModeEpsilon && std::fabs(angular) >= kDriveModeEpsilon;
+  // Do not mix samples from the preceding translation/arc into a pure rotation, or vice versa.
+  if (pure_rotation != pure_rotation_commanded_) {
+    ResetSpeedMeasurementWindow();
+  }
+  pure_rotation_commanded_ = pure_rotation;
 
   desired_speed_r_ = linear + 0.5f * static_cast<float>(WheelDistance.value) * angular;
   desired_speed_l_ = linear - 0.5f * static_cast<float>(WheelDistance.value) * angular;

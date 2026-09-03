@@ -47,6 +47,7 @@ class DiffDriveService : public DiffDriveServiceBase {
   float speed_window_dt_sum_ = 0.0f;
   uint8_t speed_window_index_ = 0;
   uint8_t speed_window_count_ = 0;
+  bool pure_rotation_commanded_ = false;
   float desired_speed_l_ = 0;
   float desired_speed_r_ = 0;
 
@@ -59,6 +60,7 @@ class DiffDriveService : public DiffDriveServiceBase {
   float GetMaxDuty() const;
   float GetNominalWheelSpeedLimit() const;
   void UpdateControllerGains();
+  void ResetSpeedMeasurementWindow();
   void UpdateDutyFromMeasuredSpeeds(float dt);
 
  public:
