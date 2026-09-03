@@ -214,9 +214,11 @@ void DiffDriveService::SetDuty() {
 }
 
 void DiffDriveService::LeftESCCallback(const MotorDriver::ESCState& state) {
+  const uint32_t sample_micros = xbot::service::system::getTimeMicros();
   bool request_next = false;
   chMtxLock(&state_mutex_);
   left_esc_state_ = state;
+  left_esc_state_micros_ = sample_micros;
   left_esc_state_valid_ = true;
   escs_connected_ |= ESC_LEFT;
   if (right_esc_state_valid_) {
@@ -231,9 +233,11 @@ void DiffDriveService::LeftESCCallback(const MotorDriver::ESCState& state) {
 }
 
 void DiffDriveService::RightESCCallback(const MotorDriver::ESCState& state) {
+  const uint32_t sample_micros = xbot::service::system::getTimeMicros();
   bool request_next = false;
   chMtxLock(&state_mutex_);
   right_esc_state_ = state;
+  right_esc_state_micros_ = sample_micros;
   right_esc_state_valid_ = true;
   escs_connected_ |= ESC_RIGHT;
   if (left_esc_state_valid_) {
@@ -261,16 +265,19 @@ void DiffDriveService::ProcessStatusUpdate() {
 
   // Calculate the twist according to wheel ticks
   if (last_ticks_valid) {
-    float dt = static_cast<float>(micros - last_ticks_micros_) / 1'000'000.0f;
+    const float left_dt = static_cast<float>(left_esc_state_micros_ - last_ticks_left_micros_) / 1'000'000.0f;
+    const float right_dt = static_cast<float>(right_esc_state_micros_ - last_ticks_right_micros_) / 1'000'000.0f;
+    const float control_dt = static_cast<float>(micros - last_control_update_micros_) / 1'000'000.0f;
     const float wheel_ticks_per_meter = static_cast<float>(WheelTicksPerMeter.value);
     const float wheel_distance = static_cast<float>(WheelDistance.value);
-    if (dt > 0.0f && wheel_ticks_per_meter > 0.0f && wheel_distance > 0.0f) {
+    if (left_dt > 0.0f && right_dt > 0.0f && control_dt > 0.0f && wheel_ticks_per_meter > 0.0f &&
+        wheel_distance > 0.0f) {
       int32_t d_left = static_cast<int32_t>(left_esc_state_.tacho - last_ticks_left);
       int32_t d_right = static_cast<int32_t>(right_esc_state_.tacho - last_ticks_right);
       const float position_resolution = 1.0f / wheel_ticks_per_meter;
-      const bool left_valid = left_speed_observer_.Update(d_left * position_resolution, dt, position_resolution);
-      const bool right_valid =
-          right_speed_observer_.Update(-static_cast<float>(d_right) * position_resolution, dt, position_resolution);
+      const bool left_valid = left_speed_observer_.Update(d_left * position_resolution, left_dt, position_resolution);
+      const bool right_valid = right_speed_observer_.Update(-static_cast<float>(d_right) * position_resolution,
+                                                            right_dt, position_resolution);
       if (!left_valid || !right_valid) {
         ResetSpeedObservers();
       } else {
@@ -279,7 +286,7 @@ void DiffDriveService::ProcessStatusUpdate() {
         float vx = 0.5f * (left_wheel_controller_.measured_speed() + right_wheel_controller_.measured_speed());
         float vr =
             (right_wheel_controller_.measured_speed() - left_wheel_controller_.measured_speed()) / wheel_distance;
-        UpdateDutyFromMeasuredSpeeds(dt);
+        UpdateDutyFromMeasuredSpeeds(control_dt);
         double data[6]{};
         data[0] = vx;
         data[5] = vr;
@@ -296,7 +303,9 @@ void DiffDriveService::ProcessStatusUpdate() {
   last_ticks_valid = true;
   last_ticks_left = left_esc_state_.tacho;
   last_ticks_right = right_esc_state_.tacho;
-  last_ticks_micros_ = micros;
+  last_ticks_left_micros_ = left_esc_state_micros_;
+  last_ticks_right_micros_ = right_esc_state_micros_;
+  last_control_update_micros_ = micros;
 
   right_esc_state_valid_ = left_esc_state_valid_ = false;
 

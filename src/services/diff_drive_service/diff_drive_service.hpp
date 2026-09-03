@@ -29,6 +29,8 @@ class DiffDriveService : public DiffDriveServiceBase {
   MotorDriver::ESCState right_esc_state_{};
   bool left_esc_state_valid_ = false;
   bool right_esc_state_valid_ = false;
+  uint32_t left_esc_state_micros_ = 0;
+  uint32_t right_esc_state_micros_ = 0;
   uint32_t last_valid_esc_state_micros_ = 0;
   static constexpr uint8_t ESC_LEFT = 1 << 0;
   static constexpr uint8_t ESC_RIGHT = 1 << 1;
@@ -38,7 +40,9 @@ class DiffDriveService : public DiffDriveServiceBase {
   uint32_t last_ticks_left = 0;
   uint32_t last_ticks_right = 0;
   bool last_ticks_valid = false;
-  uint32_t last_ticks_micros_ = 0;
+  uint32_t last_ticks_left_micros_ = 0;
+  uint32_t last_ticks_right_micros_ = 0;
+  uint32_t last_control_update_micros_ = 0;
   WheelSpeedObserver left_speed_observer_{};
   WheelSpeedObserver right_speed_observer_{};
   float desired_speed_l_ = 0;
